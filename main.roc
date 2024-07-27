@@ -127,6 +127,7 @@ defaultEnv =
     setBuiltIn = \env, name ->
         envSet env name (BuiltInVal name)
     emptyEnv
+        |> envSet "nil" (ListVal [])
         |> setBuiltIn "+"
         |> setBuiltIn "-"
         |> setBuiltIn "*"
@@ -136,6 +137,9 @@ defaultEnv =
         |> setBuiltIn ">="
         |> setBuiltIn "<="
         |> setBuiltIn "="
+        |> setBuiltIn "cons"
+        |> setBuiltIn "car"
+        |> setBuiltIn "cdr"
 
 lispStr : Ast -> Str
 lispStr = \ast ->
@@ -263,6 +267,33 @@ applyBuiltIn = \name, argForms, env ->
                                 Err DivByZero -> (ErrVal "DivByZero", env3)
                         _ -> (ErrVal "TypeError in /", env3)
                 _ -> (ErrVal "/ requires 2 args", env)
+        "cons" ->
+            when argForms is
+                [a, b] ->
+                    (aVal, env2) = eval a env
+                    (bVal, env3) = eval b env2
+                    when bVal is
+                        ListVal bVals -> (ListVal (List.prepend bVals aVal), env3)
+                        _ -> (ErrVal "cons 2nd arg must be a list", env3)
+                _ -> (ErrVal "cons requires 2 args", env)
+        "car" ->
+            when argForms is
+                [a] ->
+                    (aVal, env2) = eval a env
+                    when aVal is
+                        ListVal [] -> (ErrVal "car arg must be a non-empty list", env2)
+                        ListVal [first, ..] -> (first, env2)
+                        _ -> (ErrVal "car arg must be a list", env2)
+                _ -> (ErrVal "car requires 1 arg, got $(Inspect.toStr argForms)", env)
+        "cdr" ->
+            when argForms is
+                [a] ->
+                    (aVal, env2) = eval a env
+                    when aVal is
+                        ListVal [] -> (ErrVal "cdr arg must be a non-empty list", env2)
+                        ListVal [_, .. as rest] -> (ListVal rest, env2)
+                        _ -> (ErrVal "cdr arg must be a list", env2)
+                _ -> (ErrVal "cdr requires 1 arg", env)
         _ -> (ErrVal "Unknown built-in $(name)", env)
 apply : Val, List Ast, Env -> (Val, Env)
 apply = \fn, argForms, env ->
@@ -398,6 +429,15 @@ expect
 expect
     result = readEvalPrint "(/ 5 2)"
     result == "2" # Truncating div
+expect
+    result = readEvalPrint "(cons 1 nil)"
+    result == "( 1 )"
+expect
+    result = readEvalPrint "(car (cons 1 (cons 2 nil)))"
+    result == "1"
+expect
+    result = readEvalPrint "(cdr (cons 1 (cons 2 nil)))"
+    result == "( 2 )"
 expect # Lexical scope
     result = readEvalPrint "(define a 1) (define aGet (lambda () a)) (aGet)"
     dbg result
