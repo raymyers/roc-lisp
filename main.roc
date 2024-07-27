@@ -2,6 +2,9 @@ app [main] {
     pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.10.0/vNe6s9hWzoTZtFmNkvEICPErI9ptji_ySjicO6CkucY.tar.br",
 }
 
+# Based on Peter Norvig's Python implementation
+# https://norvig.com/lispy.html
+
 import pf.Stdout
 import pf.Stdin
 import pf.Stderr
@@ -69,15 +72,11 @@ Val : [
 
 nilVal = ListVal []
 
-
 Nat : Int Unsigned32
 EnvKey : (Str, Nat)
 Mem : Dict EnvKey Val
 Scope : Dict Str EnvKey
 Env : {mem: Mem, scope: Scope, nextSuffix: Nat}
-
-#Env : Dict Str Val
-
 
 envGet : Env, Str -> Result Val Str
 envGet = \env, name ->
@@ -115,14 +114,6 @@ envShadow = \env, name, val ->
             {mem, scope, nextSuffix}
 
 emptyEnv = {mem: Dict.empty {}, scope: Dict.empty {}, nextSuffix: 0}
-
-expect
-    env = emptyEnv
-    (envGet env "a") == Err "Name 'a' not bound in scope"
-expect
-    env = envSet emptyEnv "a" (IVal 1)
-    (envGet env "a") == Ok (IVal 1)
-
 
 defaultEnv =
     setBuiltIn = \env, name ->
@@ -471,6 +462,42 @@ readEvalPrint = \str ->
         |> evalForms env
     valStr val
 
+run : Task {} _
+run =
+    rep : Env -> Task [Done {}, Step Env] _
+    rep = \env ->
+        when Stdout.write "> " |> Task.result! is
+            Ok _ ->
+                when Stdin.line |> Task.result! is
+                    Ok input ->
+                        (val, env2) = input
+                            |> tokenize
+                            |> readFromTokens
+                            |> evalForms env
+                        when Stdout.line (valStr val) |> Task.result! is
+                            Ok _ -> Task.ok (Step env2)
+                            Err err -> Task.err err
+                    Err (StdinErr EndOfFile) -> Task.ok (Done {})
+                    Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
+            Err err -> Task.err err
+    Task.loop! defaultEnv rep
+
+main = run |> Task.onErr printErr
+
+printErr : _ -> Task {} _
+printErr = \err ->
+    when err is
+        _ -> Stderr.line "Error: $(Inspect.toStr err)"
+
+# Test Env
+expect
+    env = emptyEnv
+    (envGet env "a") == Err "Name 'a' not bound in scope"
+expect
+    env = envSet emptyEnv "a" (IVal 1)
+    (envGet env "a") == Ok (IVal 1)
+
+# Test readEvalPrint
 expect
     result = readEvalPrint "1"
     dbg result
@@ -600,47 +627,3 @@ expect
             (abs -5)
         """
     result == "5"
-
-#FunVal = List a
-
-#standard_env =
-#    env :: Dict Str FunVal
-#    env = Dict.empty {}
-#        # sin, cos, sqrt, pi, ...
-#        |> Dict.insert "+"
-#    env
-# =
-
-
-#    |> Dict.insert "Philadelphia" 1_603_797
-#    |> Dict.insert "Shanghai" 24_870_895
-#    |> Dict.insert "Delhi" 16_787_941
-#    |> Dict.insert "Amsterdam" 872_680
-
-
-run : Task {} _
-run =
-    rep : Env -> Task [Done {}, Step Env] _
-    rep = \env ->
-        when Stdout.write "> " |> Task.result! is
-            Ok _ ->
-                when Stdin.line |> Task.result! is
-                    Ok input ->
-                        (val, env2) = input
-                            |> tokenize
-                            |> readFromTokens
-                            |> evalForms env
-                        when Stdout.line (valStr val) |> Task.result! is
-                            Ok _ -> Task.ok (Step env2)
-                            Err err -> Task.err err
-                    Err (StdinErr EndOfFile) -> Task.ok (Done {})
-                    Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
-            Err err -> Task.err err
-    Task.loop! defaultEnv rep
-
-main = run |> Task.onErr printErr
-
-printErr : _ -> Task {} _
-printErr = \err ->
-    when err is
-        _ -> Stderr.line "Error: $(Inspect.toStr err)"
