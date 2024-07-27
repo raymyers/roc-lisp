@@ -62,6 +62,7 @@ Val : [
     SymVal Str,
     ErrVal Str,
     ListVal (List Val),
+    TVal,
     LambdaVal (List Str) (List Ast) Scope,
     BuiltInVal Str
 ]
@@ -140,6 +141,9 @@ defaultEnv =
         |> setBuiltIn "cons"
         |> setBuiltIn "car"
         |> setBuiltIn "cdr"
+        |> setBuiltIn "length"
+        |> setBuiltIn "list"
+        |> setBuiltIn "list?"
 
 lispStr : Ast -> Str
 lispStr = \ast ->
@@ -173,6 +177,7 @@ valStr = \val ->
             childStrs = List.map vals valStr
             childrenStr = Str.joinWith childStrs " "
             "( $(childrenStr) )"
+        TVal -> "t"
         LambdaVal params body _ ->
             paramsStr = Str.joinWith params " "
             bodyStr = body |> List.map lispStr |> Str.joinWith " "
@@ -294,6 +299,33 @@ applyBuiltIn = \name, argForms, env ->
                         ListVal [_, .. as rest] -> (ListVal rest, env2)
                         _ -> (ErrVal "cdr arg must be a list", env2)
                 _ -> (ErrVal "cdr requires 1 arg", env)
+        "length" ->
+            when argForms is
+                [a] ->
+                    (aVal, env2) = eval a env
+                    when aVal is
+                        ListVal aVals -> (IVal (Num.intCast (List.len aVals)), env2)
+                        _ -> (ErrVal "length arg must be a list", env2)
+                _ -> (ErrVal "length requires 1 arg", env)
+        "list" ->
+            when argForms is
+                [] -> (ListVal [], env)
+                [first, .. as rest] ->
+                    (firstVal, env2) = eval first env
+                    (restVal, env3) = applyBuiltIn "list" rest env2
+                    when restVal is
+                        ListVal restVals -> (ListVal (List.prepend restVals firstVal), env3)
+                        ErrVal _ -> (restVal, env3)
+                        _ -> (ErrVal "list returned non-list (interpreter bug)", env3)
+        "list?" ->
+            when argForms is
+                [item] ->
+                    (itemVal, env2) = eval item env
+                    when itemVal is
+                        ListVal restVals -> (TVal, env2)
+                        ErrVal _ -> (itemVal, env2)
+                        _ -> (nilVal, env2)
+                _ -> (ErrVal "list? requires 1 arg", env)
         _ -> (ErrVal "Unknown built-in $(name)", env)
 apply : Val, List Ast, Env -> (Val, Env)
 apply = \fn, argForms, env ->
@@ -438,6 +470,21 @@ expect
 expect
     result = readEvalPrint "(cdr (cons 1 (cons 2 nil)))"
     result == "( 2 )"
+expect
+    result = readEvalPrint "(length (cons 1 (cons 2 nil)))"
+    result == "2"
+expect
+    result = readEvalPrint "(length (list 1 2))"
+    result == "2"
+expect
+    result = readEvalPrint "(list? (list 1 2))"
+    result == "t"
+expect
+    result = readEvalPrint "(list? nil)"
+    result == "t"
+expect
+    result = readEvalPrint "(list? 43)"
+    result == "(  )"
 expect # Lexical scope
     result = readEvalPrint "(define a 1) (define aGet (lambda () a)) (aGet)"
     dbg result
