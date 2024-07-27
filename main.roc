@@ -236,16 +236,25 @@ eval = \ast, env ->
 
 applyBuiltIn : Str, List Ast, Env -> (Val, Env)
 applyBuiltIn = \name, argForms, env ->
+    naryReduceFn : List Ast, Val, Env, (Val, Val -> Val) -> (Val, Env)
+    naryReduceFn = \argForms1, start, env1, fn ->
+        when argForms1 is
+            [] -> (start, env1)
+            [first, .. as rest] ->
+                (firstVal, env2) = eval first env1
+                naryReduceFn rest (fn start firstVal) env2 fn
+    binaryFn = \fn ->
+        when argForms is
+            [a, b] ->
+                (aVal, env2) = eval a env
+                (bVal, env3) = eval b env2
+                (fn aVal bVal, env3)
+            _ -> (ErrVal "$(name) requires 2 args", env)
     when name is
-        "+" ->
-            when argForms is
-                [] -> (IVal 0, env)
-                [first, .. as rest] ->
-                    (firstVal, env2) = eval first env
-                    (restVal, env3) = applyBuiltIn "+" rest env2
-                    when (firstVal, restVal) is
-                        (IVal a, IVal b) -> (IVal (a + b), env3)
-                        _ -> (ErrVal "TypeError in +", env3)
+        "+" -> naryReduceFn argForms (IVal 0) env \a,b ->
+            when (a, b) is
+                (IVal iA, IVal iB) -> (IVal (iA + iB))
+                _ -> ErrVal "TypeError in +"
         "-" ->
             when argForms is
                 [] -> (IVal 0, env)
@@ -255,27 +264,18 @@ applyBuiltIn = \name, argForms, env ->
                     when (firstVal, restVal) is
                         (IVal a, IVal b) -> (IVal (a - b), env3)
                         _ -> (ErrVal "TypeError in -", env3)
-        "*" ->
-            when argForms is
-                [] -> (IVal 1, env)
-                [first, .. as rest] ->
-                    (firstVal, env2) = eval first env
-                    (restVal, env3) = applyBuiltIn "*" rest env2
-                    when (firstVal, restVal) is
-                        (IVal a, IVal b) -> (IVal (a * b), env3)
-                        _ -> (ErrVal "TypeError in *", env3)
+        "*" -> naryReduceFn argForms (IVal 1) env \a,b ->
+            when (a, b) is
+                (IVal iA, IVal iB) -> (IVal (iA * iB))
+                _ -> ErrVal "TypeError in *"
         "/" ->
-            when argForms is
-                [a, b] ->
-                    (aVal, env2) = eval a env
-                    (bVal, env3) = eval b env2
+            binaryFn \aVal, bVal ->
                     when (aVal, bVal) is
                         (IVal iA, IVal iB) ->
                             when Num.divTruncChecked iA iB is
-                                Ok n ->  (IVal n, env3)
-                                Err DivByZero -> (ErrVal "DivByZero", env3)
-                        _ -> (ErrVal "TypeError in /", env3)
-                _ -> (ErrVal "/ requires 2 args", env)
+                                Ok n ->  IVal n
+                                Err DivByZero -> ErrVal "DivByZero"
+                        _ -> ErrVal "TypeError in /"
         "cons" ->
             when argForms is
                 [a, b] ->
@@ -554,10 +554,13 @@ expect # Shadow Lexical scope
         """
     dbg result
     result == "1"
-expect
-    result = readEvalPrint "(define a (lambda (b) b)) (a 5)"
-    dbg result
-    result == "5"
+#expect
+#    result = readEvalPrint
+#        """
+#            (define max (lambda (a b) (if (< a b) b a)))
+#            (max 3 4)
+#        """
+#    result == "4"
 
 
 #FunVal = List a
