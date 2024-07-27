@@ -258,12 +258,17 @@ applyBuiltIn = \name, argForms, env ->
         "-" ->
             when argForms is
                 [] -> (IVal 0, env)
+                [first] ->
+                    (firstVal, env2) = eval first env
+                    when firstVal is
+                        IVal a -> (IVal (0 - a), env2)
+                        _ -> (ErrVal "TypeError in -", env2)
                 [first, .. as rest] ->
                     (firstVal, env2) = eval first env
-                    (restVal, env3) = applyBuiltIn "-" rest env2
-                    when (firstVal, restVal) is
-                        (IVal a, IVal b) -> (IVal (a - b), env3)
-                        _ -> (ErrVal "TypeError in -", env3)
+                    naryReduceFn rest firstVal env2 \a,b ->
+                        when (a, b) is
+                            (IVal iA, IVal iB) -> (IVal (iA - iB))
+                            _ -> ErrVal "TypeError in -"
         "*" -> naryReduceFn argForms (IVal 1) env \a,b ->
             when (a, b) is
                 (IVal iA, IVal iB) -> (IVal (iA * iB))
@@ -276,6 +281,30 @@ applyBuiltIn = \name, argForms, env ->
                                 Ok n ->  IVal n
                                 Err DivByZero -> ErrVal "DivByZero"
                         _ -> ErrVal "TypeError in /"
+        "<" ->
+            binaryFn \aVal, bVal ->
+                    when (aVal, bVal) is
+                        (IVal iA, IVal iB) ->
+                            if iA < iB then TVal else nilVal
+                        _ -> ErrVal "TypeError in <"
+        ">" ->
+            binaryFn \aVal, bVal ->
+                    when (aVal, bVal) is
+                        (IVal iA, IVal iB) ->
+                            if iA > iB then TVal else nilVal
+                        _ -> ErrVal "TypeError in >"
+        ">=" ->
+            binaryFn \aVal, bVal ->
+                    when (aVal, bVal) is
+                        (IVal iA, IVal iB) ->
+                            if iA >= iB then TVal else nilVal
+                        _ -> ErrVal "TypeError in >="
+        "<=" ->
+            binaryFn \aVal, bVal ->
+                    when (aVal, bVal) is
+                        (IVal iA, IVal iB) ->
+                            if iA <= iB then TVal else nilVal
+                        _ -> ErrVal "TypeError in <="
         "cons" ->
             when argForms is
                 [a, b] ->
@@ -486,6 +515,9 @@ expect
     result = readEvalPrint "(- 1 1)"
     result == "0"
 expect
+    result = readEvalPrint "(- 1)"
+    result == "-1"
+expect
     result = readEvalPrint "(* 2 3)"
     result == "6"
 expect
@@ -554,14 +586,20 @@ expect # Shadow Lexical scope
         """
     dbg result
     result == "1"
-#expect
-#    result = readEvalPrint
-#        """
-#            (define max (lambda (a b) (if (< a b) b a)))
-#            (max 3 4)
-#        """
-#    result == "4"
-
+expect
+    result = readEvalPrint
+        """
+            (define max (lambda (a b) (if (< a b) b a)))
+            (max 3 4)
+        """
+    result == "4"
+expect
+    result = readEvalPrint
+        """
+            (define abs (lambda (a) (if (< a 0) (- a) a)))
+            (abs -5)
+        """
+    result == "5"
 
 #FunVal = List a
 
