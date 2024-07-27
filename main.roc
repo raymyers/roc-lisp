@@ -129,6 +129,7 @@ defaultEnv =
         envSet env name (BuiltInVal name)
     emptyEnv
         |> envSet "nil" (ListVal [])
+        |> envSet "t" TVal
         |> setBuiltIn "+"
         |> setBuiltIn "-"
         |> setBuiltIn "*"
@@ -144,6 +145,9 @@ defaultEnv =
         |> setBuiltIn "length"
         |> setBuiltIn "list"
         |> setBuiltIn "list?"
+        |> setBuiltIn "not"
+        |> setBuiltIn "procedure?"
+        |> setBuiltIn "symbol?"
 
 lispStr : Ast -> Str
 lispStr = \ast ->
@@ -326,6 +330,32 @@ applyBuiltIn = \name, argForms, env ->
                         ErrVal _ -> (itemVal, env2)
                         _ -> (nilVal, env2)
                 _ -> (ErrVal "list? requires 1 arg", env)
+        "not" ->
+            when argForms is
+                [item] ->
+                    (itemVal, env2) = eval item env
+                    when itemVal is
+                        ListVal [] -> (TVal, env2)
+                        ErrVal _ -> (itemVal, env2)
+                        _ -> (nilVal, env2)
+                _ -> (ErrVal "not requires 1 arg", env)
+        "procedure?" ->
+            when argForms is
+                [a] ->
+                    (aVal, env2) = eval a env
+                    when aVal is
+                        LambdaVal _ _ _ -> (TVal, env2)
+                        BuiltInVal _ -> (TVal, env2)
+                        _ -> (nilVal, env2)
+                _ -> (ErrVal "procedure? requires 1 arg", env)
+        "symbol?" ->
+            when argForms is
+                [a] ->
+                    (aVal, env2) = eval a env
+                    when aVal is
+                        SymVal _ -> (TVal, env2)
+                        _ -> (nilVal, env2)
+                _ -> (ErrVal "symbol? requires 1 arg", env)
         _ -> (ErrVal "Unknown built-in $(name)", env)
 apply : Val, List Ast, Env -> (Val, Env)
 apply = \fn, argForms, env ->
@@ -484,6 +514,27 @@ expect
     result == "t"
 expect
     result = readEvalPrint "(list? 43)"
+    result == "(  )"
+expect
+    result = readEvalPrint "(not nil)"
+    result == "t"
+expect
+    result = readEvalPrint "(not t)"
+    result == "(  )"
+expect
+    result = readEvalPrint "(symbol? 4)"
+    result == "(  )"
+expect
+    result = readEvalPrint "(symbol? (quote a))"
+    result == "t"
+expect
+    result = readEvalPrint "(procedure? (lambda ()))"
+    result == "t"
+expect
+    result = readEvalPrint "(procedure? +)"
+    result == "t"
+expect
+    result = readEvalPrint "(procedure? (quote +))"
     result == "(  )"
 expect # Lexical scope
     result = readEvalPrint "(define a 1) (define aGet (lambda () a)) (aGet)"
