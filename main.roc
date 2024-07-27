@@ -124,8 +124,18 @@ expect
 
 
 defaultEnv =
+    setBuiltIn = \env, name ->
+        envSet env name (BuiltInVal name)
     emptyEnv
-    |> envSet "+" (BuiltInVal "+")
+        |> setBuiltIn "+"
+        |> setBuiltIn "-"
+        |> setBuiltIn "*"
+        |> setBuiltIn "/"
+        |> setBuiltIn ">"
+        |> setBuiltIn "<"
+        |> setBuiltIn ">="
+        |> setBuiltIn "<="
+        |> setBuiltIn "="
 
 lispStr : Ast -> Str
 lispStr = \ast ->
@@ -223,7 +233,37 @@ applyBuiltIn = \name, argForms, env ->
                     when (firstVal, restVal) is
                         (IVal a, IVal b) -> (IVal (a + b), env3)
                         _ -> (ErrVal "TypeError in +", env3)
-        _ -> (ErrVal "TypeError in +", env)
+        "-" ->
+            when argForms is
+                [] -> (IVal 0, env)
+                [first, .. as rest] ->
+                    (firstVal, env2) = eval first env
+                    (restVal, env3) = applyBuiltIn "-" rest env2
+                    when (firstVal, restVal) is
+                        (IVal a, IVal b) -> (IVal (a - b), env3)
+                        _ -> (ErrVal "TypeError in -", env3)
+        "*" ->
+            when argForms is
+                [] -> (IVal 1, env)
+                [first, .. as rest] ->
+                    (firstVal, env2) = eval first env
+                    (restVal, env3) = applyBuiltIn "*" rest env2
+                    when (firstVal, restVal) is
+                        (IVal a, IVal b) -> (IVal (a * b), env3)
+                        _ -> (ErrVal "TypeError in *", env3)
+        "/" ->
+            when argForms is
+                [a, b] ->
+                    (aVal, env2) = eval a env
+                    (bVal, env3) = eval b env2
+                    when (aVal, bVal) is
+                        (IVal iA, IVal iB) ->
+                            when Num.divTruncChecked iA iB is
+                                Ok n ->  (IVal n, env3)
+                                Err DivByZero -> (ErrVal "DivByZero", env3)
+                        _ -> (ErrVal "TypeError in /", env3)
+                _ -> (ErrVal "/ requires 2 args", env)
+        _ -> (ErrVal "Unknown built-in $(name)", env)
 apply : Val, List Ast, Env -> (Val, Env)
 apply = \fn, argForms, env ->
     doErr = \s -> (ErrVal s, env)
@@ -349,6 +389,15 @@ expect
 expect
     dbg readEvalPrint "(+ 1 1)"
     "2" == readEvalPrint "(+ 1 1)"
+expect
+    result = readEvalPrint "(- 1 1)"
+    result == "0"
+expect
+    result = readEvalPrint "(* 2 3)"
+    result == "6"
+expect
+    result = readEvalPrint "(/ 5 2)"
+    result == "2" # Truncating div
 expect # Lexical scope
     result = readEvalPrint "(define a 1) (define aGet (lambda () a)) (aGet)"
     dbg result
