@@ -33,3 +33,21 @@ Exit with Ctrl-D (EOF).
 (max 3 4)
 ```
 => 4
+
+## Features
+Values supported:
+
+* Integers (Represented by Roc's I32)
+* Lists
+* t (true)
+* nil (false / empty list)
+* lambda (anonymous functions)
+* symbols (e.g. `(quote mysym)`)
+
+## Next steps?
+
+These are missing but should be easy to implement.
+
+* Floats
+* Quote notation (`'(a b)` expands to `(quote (a b)`)
+* equality (Scheme's `eq?` and `equal?`)
