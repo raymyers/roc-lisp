@@ -62,14 +62,70 @@ Val : [
     SymVal Str,
     ErrVal Str,
     ListVal (List Val),
-    LambdaVal (List Str) (List Ast),
+    LambdaVal (List Str) (List Ast) Scope,
     BuiltInVal Str
 ]
 
 nilVal = ListVal []
 
-Env : Dict Str Val
 
+Nat : Int Unsigned32
+EnvKey : (Str, Nat)
+Mem : Dict EnvKey Val
+Scope : Dict Str EnvKey
+Env : {mem: Mem, scope: Scope, nextSuffix: Nat}
+
+#Env : Dict Str Val
+
+
+envGet : Env, Str -> Result Val Str
+envGet = \env, name ->
+    when Dict.get env.scope name is
+        Ok key -> when Dict.get env.mem key is
+            Ok val -> Ok val
+            Err _ -> Err "Name '$(name)' bound to missing reference (interpreter bug)"
+        Err _ -> Err "Name '$(name)' not bound in scope"
+
+envContains : Env, Str -> Bool
+envContains = \env, name ->
+    when Dict.get env.scope name is
+        Ok key -> Bool.true
+        Err _ -> Bool.false
+
+envSet : Env, Str, Val -> Env
+envSet = \env, name, val ->
+     when Dict.get env.scope name is
+        Ok key ->
+            mem2 = Dict.insert env.mem key val
+            {env & mem: mem2}
+        Err _ ->
+            key = (name, env.nextSuffix)
+            nextSuffix = env.nextSuffix + 1
+            mem = Dict.insert env.mem key val
+            scope = Dict.insert env.scope name key
+            {mem, scope, nextSuffix}
+
+envShadow : Env, Str, Val -> Env
+envShadow = \env, name, val ->
+            key = (name, env.nextSuffix)
+            nextSuffix = env.nextSuffix + 1
+            mem = Dict.insert env.mem key val
+            scope = Dict.insert env.scope name key
+            {mem, scope, nextSuffix}
+
+emptyEnv = {mem: Dict.empty {}, scope: Dict.empty {}, nextSuffix: 0}
+
+expect
+    env = emptyEnv
+    (envGet env "a") == Err "Name 'a' not bound in scope"
+expect
+    env = envSet emptyEnv "a" (IVal 1)
+    (envGet env "a") == Ok (IVal 1)
+
+
+defaultEnv =
+    emptyEnv
+    |> envSet "+" (BuiltInVal "+")
 
 lispStr : Ast -> Str
 lispStr = \ast ->
@@ -103,7 +159,7 @@ valStr = \val ->
             childStrs = List.map vals valStr
             childrenStr = Str.joinWith childStrs " "
             "( $(childrenStr) )"
-        LambdaVal params body ->
+        LambdaVal params body _ ->
             paramsStr = Str.joinWith params " "
             bodyStr = body |> List.map lispStr |> Str.joinWith " "
             "(lambda ($(paramsStr)) $(bodyStr)"
@@ -118,13 +174,6 @@ builtIn2Arg = \name, f ->
         when args is
             [arg1, arg2] -> f arg1 arg2
             _ -> ErrVal "Wrong number of args for '$(name)'"
-standardEnv =
-    builtInPlus = builtIn2Arg "+" \a, b ->
-        when (a, b) is
-            (IVal iA, IVal iB) -> IVal (iA + iB)
-            _ -> ErrVal "Cannot add non-int"
-    Dict.empty {}
-    |> Dict.insert "+" (BuiltInVal "+")
 
 evalAtom : Str, Env -> Val
 evalAtom = \s, env ->
@@ -132,9 +181,9 @@ evalAtom = \s, env ->
         Ok n -> IVal n
         Err _ ->
             # Symbol
-            when Dict.get env s is
+            when envGet env s is
                 Ok val -> val
-                Err _ -> ErrVal "Undefined symbol '$(s)'"
+                Err msg -> ErrVal msg
 
 evalIf : List Ast, Env -> (Val, Env)
 evalIf = \rest, env ->
@@ -179,9 +228,10 @@ apply : Val, List Ast, Env -> (Val, Env)
 apply = \fn, argForms, env ->
     doErr = \s -> (ErrVal s, env)
     when fn is
-        LambdaVal params body ->
+        LambdaVal params body scope ->
             if List.len params == List.len argForms then
-                env3 = bindArgs params argForms env
+                env2 = {env & scope: scope}
+                env3 = bindArgs params argForms env2
                 evalForms body env3
             else doErr "Wrong number of args"
         BuiltInVal name ->
@@ -204,16 +254,16 @@ evalList = \items, env ->
                     when rest is
                         [AtomNode name, exp] ->
                             (val, env2) = eval exp env
-                            env3 = Dict.insert env2 name val
+                            env3 = envSet env2 name val
                             (nilVal, env3)
                         [_, _] -> doErr "First arg of define must be a symbol"
                         _ -> doErr "Wrong number of args for define"
                 AtomNode "set!" ->
                     when rest is
                         [AtomNode name, exp] ->
-                            if Dict.contains env name then
+                            if envContains env name then
                                 (val, env2) = eval exp env
-                                env3 = Dict.insert env2 name val
+                                env3 = envSet env2 name val
                                 (nilVal, env3)
                             else doErr "Cannot set! on undefined name '$(name)'"
                         [_, _] -> doErr "First arg of set! must be a symbol"
@@ -223,7 +273,7 @@ evalList = \items, env ->
                         [ListNode params, .. as body] ->
                             # Check that they are symbols?
                             paramNames = List.map params lispStr
-                            (LambdaVal paramNames body, env)
+                            (LambdaVal paramNames body env.scope, env)
                         _ -> doErr "Invalid lambda, expected param list"
                 ErrorNode s -> (ErrVal s, env)
                 AtomNode s ->
@@ -239,7 +289,7 @@ bindArgs = \params, args, env ->
         (_, []) -> env
         ([param, .. as paramRest], [arg, .. as argRest]) ->
             (val, env2) = eval arg env
-            env3 = Dict.insert env2 param val
+            env3 = envShadow env2 param val
             bindArgs paramRest argRest env3
         (_, _) -> env # Shouldn't be needed?
 
@@ -252,7 +302,7 @@ evalForms = \asts, env ->
             (val, env2) = eval first env
             evalForms rest env2
 readEvalPrint = \str ->
-    env = standardEnv
+    env = defaultEnv
     (val, env2) = str
         |> tokenize
         |> readFromTokens
@@ -299,10 +349,28 @@ expect
 expect
     dbg readEvalPrint "(+ 1 1)"
     "2" == readEvalPrint "(+ 1 1)"
-#expect
-#    result = readEvalPrint "(define a (lambda (b) b)) (a 5)"
-#    dbg result
-#    result == "5"
+expect # Lexical scope
+    result = readEvalPrint "(define a 1) (define aGet (lambda () a)) (aGet)"
+    dbg result
+    result == "1"
+expect # Lexical scope with update
+    result = readEvalPrint "(define a 1) (define aGet (lambda () a)) (set! a 2) (aGet)"
+    dbg result
+    result == "2"
+expect # Shadow Lexical scope
+    result = readEvalPrint
+        """
+            (define a 1)
+            (define aGet (lambda () a))
+            (define getWrap (lambda (a) (aGet)))
+            (getWrap 2)
+        """
+    dbg result
+    result == "1"
+expect
+    result = readEvalPrint "(define a (lambda (b) b)) (a 5)"
+    dbg result
+    result == "5"
 
 
 #FunVal = List a
@@ -340,7 +408,6 @@ run =
                     Err (StdinErr EndOfFile) -> Task.ok (Done {})
                     Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
             Err err -> Task.err err
-    defaultEnv = Dict.empty {}
     Task.loop! defaultEnv rep
 
 main = run |> Task.onErr printErr
