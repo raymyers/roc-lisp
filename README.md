@@ -17,3 +17,19 @@ Run an interactive REPL:
 ```
 roc dev
 ```
+Exit with Ctrl-D (EOF).
+
+## Examples
+```
+(list 1 2 3)
+(quote a)
+(define n 5)
+(set! n 6)
+```
+
+```
+(define max (lambda (a b) (if (< a b) b a)))
+
+(max 3 4)
+```
+=> 4
