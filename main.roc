@@ -535,35 +535,47 @@ readEvalPrint = \str ->
 
         Err err -> Inspect.toStr err
 
+ReplState : { pendingInput : Str, env : Env }
+
 run : Task {} _
 run =
-    rep : Env -> Task [Done {}, Step Env] _
-    rep = \env ->
+    readEvalPrintTask : ReplState -> Task [Done {}, Step ReplState] _
+    readEvalPrintTask = \state ->
+        { pendingInput, env } = state
         when Stdout.write "> " |> Task.result! is
             Ok _ ->
                 when Stdin.line |> Task.result! is
                     Ok input ->
+                        combinedInput = "$(pendingInput)\n$(input)"
                         readResult =
-                            input
+                            combinedInput
                             |> tokenize
                             |> readFromTokens
                         when readResult is
                             Ok asts ->
                                 (val, env2) = evalForms asts env
                                 when Stdout.line (valStr val) |> Task.result! is
-                                    Ok _ -> Task.ok (Step env2)
+                                    Ok _ ->
+                                        nextState = { env: env2, pendingInput: "" }
+                                        Task.ok (Step nextState)
+
                                     Err err -> Task.err err
+
+                            Err MissingCloseParen ->
+                                nextState = { env, pendingInput: combinedInput }
+                                Task.ok (Step nextState)
 
                             Err readErr ->
                                 when Stdout.line (Inspect.toStr readErr) |> Task.result! is
-                                    Ok _ -> Task.ok (Step env)
+                                    Ok _ -> Task.ok (Step { env: env, pendingInput: "" })
                                     Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
 
                     Err (StdinErr EndOfFile) -> Task.ok (Done {})
                     Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
 
             Err err -> Task.err err
-    Task.loop! defaultEnv rep
+    initialState = { pendingInput: "", env: defaultEnv }
+    Task.loop! initialState readEvalPrintTask
 
 main = run |> Task.onErr printErr
 
