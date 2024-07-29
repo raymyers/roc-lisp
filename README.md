@@ -52,3 +52,4 @@ These are missing but should be easy to implement.
 * Floats
 * Quote notation (`'(a b)` expands to `(quote (a b)`)
 * equality (Scheme's `eq?` and `equal?`)
+* Comments

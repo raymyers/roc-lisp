@@ -554,7 +554,10 @@ run =
                                     Ok _ -> Task.ok (Step env2)
                                     Err err -> Task.err err
 
-                            Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
+                            Err readErr ->
+                                when Stdout.line (Inspect.toStr readErr) |> Task.result! is
+                                    Ok _ -> Task.ok (Step env)
+                                    Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
 
                     Err (StdinErr EndOfFile) -> Task.ok (Done {})
                     Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
