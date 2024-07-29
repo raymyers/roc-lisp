@@ -151,6 +151,7 @@ defaultEnv =
     |> setBuiltIn "list"
     |> setBuiltIn "list?"
     |> setBuiltIn "not"
+    |> setBuiltIn "equal?"
     |> setBuiltIn "procedure?"
     |> setBuiltIn "symbol?"
 
@@ -196,6 +197,26 @@ valStr = \val ->
 
         SymVal s -> s
         ErrVal s -> s
+valEqual : Val, Val -> Bool
+valEqual = \a, b ->
+    when (a, b) is
+        (IVal iA, IVal iB) -> iA == iB
+        (TVal, TVal) -> Bool.true
+        (ListVal aVals, ListVal bVals) ->
+            if List.len aVals == List.len bVals then
+                List.all (List.map2 aVals bVals valEqual) \x -> x
+            else
+                Bool.false
+
+        (BuiltInVal aName, BuiltInVal bName) -> aName == bName
+        (SymVal aName, SymVal bName) -> aName == bName
+        (_, _) -> Bool.false
+
+expect valEqual (IVal 2) (IVal 2)
+expect !(valEqual (IVal 1) (IVal 2))
+expect valEqual (ListVal [TVal]) (ListVal [TVal])
+expect !(valEqual (ListVal [IVal 1]) (ListVal [IVal 2]))
+expect !(valEqual (ListVal [IVal 1]) (ListVal [IVal 1, IVal 2]))
 
 builtIn2Arg = \name, f ->
     BuiltInVal name \args ->
@@ -401,6 +422,10 @@ applyBuiltIn = \name, argForms, env ->
                         _ -> (nilVal, env2)
 
                 _ -> (ErrVal "not requires 1 arg", env)
+
+        "equal?" ->
+            binaryFn \aVal, bVal ->
+                if valEqual aVal bVal then TVal else nilVal
 
         "procedure?" ->
             when argForms is

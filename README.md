@@ -48,8 +48,6 @@ Values supported:
 
 These are missing but should be easy to implement.
 
-* multi-line expressions
 * Floats
 * Quote notation (`'(a b)` expands to `(quote (a b)`)
-* equality (Scheme's `eq?` and `equal?`)
 * Comments
