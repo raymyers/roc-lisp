@@ -22,42 +22,49 @@ tokenize = \s ->
 
 expect tokenize "(1 2(3))" == ["(", "1", "2", "(", "3", ")", ")"]
 
-Ast : [AtomNode Str, ListNode (List Ast), ErrorNode Str]
+Ast : [AtomNode Str, ListNode (List Ast)]
+
+ReadErr : [MissingCloseParen, UnexpectedCloseParen]
 
 parseStr = \str -> readFromTokens (tokenize str)
 
-readFromTokens : List Str -> List Ast
+readFromTokens : List Str -> Result (List Ast) ReadErr
 readFromTokens = \tokens ->
     if tokens == [] then
-        []
+        Ok []
     else
-        (ast, moreTokens) = readOnceFromTokens tokens
-        List.prepend (readFromTokens moreTokens) ast
+        when readOnceFromTokens tokens is
+            Ok (ast, moreTokens) ->
+                when readFromTokens moreTokens is
+                    Ok moreAsts -> Ok (List.prepend moreAsts ast)
+                    Err err -> Err err
+
+            Err err -> Err err
 
 expect
     (readFromTokens (tokenize "(1 2(3))"))
     ==
-    [ListNode [AtomNode "1", AtomNode "2", ListNode [AtomNode "3"]]]
+    Ok [ListNode [AtomNode "1", AtomNode "2", ListNode [AtomNode "3"]]]
 
-readOnceFromTokens : List Str -> (Ast, List Str)
+readOnceFromTokens : List Str -> Result (Ast, List Str) ReadErr
 readOnceFromTokens = \tokens ->
     when tokens is
-        [] -> (AtomNode "Nil", [])
+        [] -> Ok (AtomNode "Nil", [])
         ["(", .. as rest] -> readListFromTokens rest []
-        [")", .. as rest] -> (ErrorNode "Unexpected )", rest)
-        [atom, .. as rest] -> (AtomNode atom, rest)
+        [")", .. as rest] -> Err UnexpectedCloseParen
+        [atom, .. as rest] -> Ok (AtomNode atom, rest)
 
-readListFromTokens : List Str, List Ast -> ([ListNode (List Ast)], List Str)
+readListFromTokens : List Str, List Ast -> Result ([ListNode (List Ast)], List Str) ReadErr
 readListFromTokens = \tokens, acc ->
     when tokens is
-        [] ->
-            errorNode = ErrorNode "Missing )"
-            (ListNode (List.append acc errorNode), [])
-
-        [")", .. as rest] -> (ListNode acc, rest)
+        [] -> Err MissingCloseParen
+        [")", .. as rest] -> Ok (ListNode acc, rest)
         ["(", .. as rest] ->
-            (listNode, nextRest) = readListFromTokens rest []
-            readListFromTokens nextRest (List.append acc listNode)
+            when readListFromTokens rest [] is
+                Ok (listNode, nextRest) ->
+                    readListFromTokens nextRest (List.append acc listNode)
+
+                Err err -> Err err
 
         [atom, .. as rest] ->
             nextAcc = List.concat acc [AtomNode atom]
@@ -157,13 +164,12 @@ lispStr = \ast ->
             childrenStr = Str.joinWith childStrs " "
             "( $(childrenStr) )"
 
-        ErrorNode s -> s
-
 expect
     results =
         "(1 2(5))"
         |> tokenize
         |> readFromTokens
+        |> Result.withDefault []
         |> List.map lispStr
     dbg results
 
@@ -224,7 +230,6 @@ quote = \ast ->
     when ast is
         AtomNode s -> SymVal s
         ListNode children -> ListVal (List.map children quote)
-        ErrorNode s -> ErrVal s
 eval : Ast, Env -> (Val, Env)
 eval = \ast, env ->
     # Evaluate an expression in an environment
@@ -232,7 +237,6 @@ eval = \ast, env ->
     when ast is
         AtomNode s -> (evalAtom s env, env)
         ListNode items -> evalList items env
-        ErrorNode s -> (ErrVal s, env)
 
 applyBuiltIn : Str, List Ast, Env -> (Val, Env)
 applyBuiltIn = \name, argForms, env ->
@@ -486,7 +490,6 @@ evalList = \items, env ->
 
                         _ -> doErr "Invalid lambda, expected param list"
 
-                ErrorNode s -> (ErrVal s, env)
                 AtomNode s ->
                     firstVal = evalAtom s env
                     apply firstVal rest env
@@ -520,14 +523,17 @@ evalForms = \asts, env ->
         [first, .. as rest] ->
             (val, env2) = eval first env
             evalForms rest env2
+
+readEvalPrint : Str -> Str
 readEvalPrint = \str ->
     env = defaultEnv
-    (val, env2) =
-        str
-        |> tokenize
-        |> readFromTokens
-        |> evalForms env
-    valStr val
+    readResult = str |> tokenize |> readFromTokens
+    when readResult is
+        Ok asts ->
+            (val, _) = asts |> evalForms env
+            valStr val
+
+        Err err -> Inspect.toStr err
 
 run : Task {} _
 run =
@@ -537,14 +543,18 @@ run =
             Ok _ ->
                 when Stdin.line |> Task.result! is
                     Ok input ->
-                        (val, env2) =
+                        readResult =
                             input
                             |> tokenize
                             |> readFromTokens
-                            |> evalForms env
-                        when Stdout.line (valStr val) |> Task.result! is
-                            Ok _ -> Task.ok (Step env2)
-                            Err err -> Task.err err
+                        when readResult is
+                            Ok asts ->
+                                (val, env2) = evalForms asts env
+                                when Stdout.line (valStr val) |> Task.result! is
+                                    Ok _ -> Task.ok (Step env2)
+                                    Err err -> Task.err err
+
+                            Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
 
                     Err (StdinErr EndOfFile) -> Task.ok (Done {})
                     Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
