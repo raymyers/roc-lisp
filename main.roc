@@ -53,7 +53,7 @@ read_once_from_tokens = |tokens|
     when tokens is
         [] -> Ok((AtomNode("Nil"), []))
         ["(", .. as rest] -> read_list_from_tokens(rest, [])
-        [")", .. as rest] -> Err(UnexpectedCloseParen)
+        [")", .. as _rest] -> Err(UnexpectedCloseParen)
         [atom, .. as rest] -> Ok((AtomNode(atom), rest))
 
 read_list_from_tokens : List Str, List Ast -> Result ([ListNode (List Ast)], List Str) ReadErr
@@ -103,7 +103,7 @@ env_get = |env, name|
 env_contains : Env, Str -> Bool
 env_contains = |env, name|
     when Dict.get(env.scope, name) is
-        Ok(key) -> Bool.true
+        Ok(_) -> Bool.true
         Err(_) -> Bool.false
 
 env_set : Env, Str, Val -> Env
@@ -120,14 +120,7 @@ env_set = |env, name, val|
             scope = Dict.insert(env.scope, name, key)
             { mem, scope, nextSuffix: next_suffix }
 
-env_shadow : Env, Scope, Str, Val -> (Env, Scope)
-env_shadow = |env, aux_scope, name, val|
-    key = (name, env.nextSuffix)
-    next_suffix = env.nextSuffix + 1
-    mem = Dict.insert(env.mem, key, val)
-    scope = Dict.insert(env.scope, name, key)
-    aux_scope2 = Dict.insert(aux_scope, name, key)
-    ({ mem, scope, nextSuffix: next_suffix }, aux_scope2)
+
 
 empty_env = { mem: Dict.empty({}), scope: Dict.empty({}), nextSuffix: 0 }
 
@@ -454,12 +447,32 @@ apply : Val, List Ast, Env -> (Val, Env)
 apply = |fn, arg_forms, env|
     do_err = |s| (ErrVal(s), env)
     when fn is
-        LambdaVal(params, body, scope) ->
+        LambdaVal(params, body, lambda_scope) ->
             if List.len(params) == List.len(arg_forms) then
-                # Evaluate in the lambda's scope, then proceed with the old scope.
-                env2 = bind_args(params, arg_forms, env, scope)
-                (val, env3) = eval_forms(body, env2)
-                (val, { env3 & scope: env.scope })
+                # Save the original scope
+                original_scope = env.scope
+                
+                # Create a new environment with the lambda's scope
+                lambda_env = { env & scope: lambda_scope }
+                
+                # Evaluate arguments and bind them to parameters
+                lambda_env_with_args = 
+                    List.walk_with_index(arg_forms, lambda_env, \env_acc, arg, i ->
+                        # Get the parameter name
+                        when List.get(params, i) is
+                            Ok(param) ->
+                                # Evaluate the argument in the original environment
+                                (val, _) = eval(arg, env)
+                                # Bind the parameter in the lambda environment
+                                env_set(env_acc, param, val)
+                            _ -> env_acc
+                    )
+                
+                # Evaluate the body in the lambda's environment
+                (val, _) = eval_forms(body, lambda_env_with_args)
+                
+                # Return the result with the original scope restored
+                (val, { env & scope: original_scope })
             else
                 do_err("Wrong number of args")
 
@@ -510,8 +523,12 @@ eval_list = |items, env|
                 AtomNode("lambda") ->
                     when rest is
                         [ListNode(params), .. as body] ->
-                            # Check that they are symbols?
-                            param_names = List.map(params, lisp_str)
+                            # Extract parameter names from AtomNodes
+                            param_names = List.map(params, |p| 
+                                when p is
+                                    AtomNode(name) -> name
+                                    _ -> "invalid-param" # This should not happen in valid Lisp code
+                            )
                             (LambdaVal(param_names, body, env.scope), env)
 
                         _ -> do_err("Invalid lambda, expected param list")
@@ -523,31 +540,17 @@ eval_list = |items, env|
                 ListNode(asts) ->
                     (first_val, env2) = eval_list(asts, env)
                     apply(first_val, rest, env2)
-bind_args : List Str, List Ast, Env, Scope -> Env
-bind_args = |params, args, env, scope|
-    # dbg params
 
-    # dbg args
-
-    when (params, args) is
-        ([], _) -> { env & scope }
-        (_, []) -> { env & scope }
-        ([param, .. as param_rest], [arg, .. as arg_rest]) ->
-            (val, env2) = eval(arg, env)
-            # dbg val_str val
-
-            (env3, scope2) = env_shadow(env2, scope, param, val)
-            bind_args(param_rest, arg_rest, env3, scope2)
-
-        (_, _) -> env # Shouldn't be needed?
 
 eval_forms : List Ast, Env -> (Val, Env)
 eval_forms = |asts, env|
     when asts is
-        [] -> (ListVal([]), env)
-        [first] -> eval(first, env)
+        [] -> 
+            (ListVal([]), env)
+        [first] -> 
+            eval(first, env)
         [first, .. as rest] ->
-            (val, env2) = eval(first, env)
+            (_, env2) = eval(first, env)
             eval_forms(rest, env2)
 
 read_eval_print : Str -> Str
@@ -564,7 +567,7 @@ read_eval_print = |str|
 # ReplState : { pending_input : Str, env : Env }
 
 main! : List Arg.Arg => Result {} [Exit I32 Str]_
-main! = |_args|
+main! = |args|
     # Simple REPL implementation
     initial_state = { pending_input: "", env: default_env }
     
@@ -597,12 +600,12 @@ main! = |_args|
                 Err(Exit(0, "Goodbye!"))
     
     # Run the REPL until EOF or error
-    run_repl! = |state|
+    run_repl_loop! = |state|
         when repl_step!(state) is
-            Ok(new_state) -> run_repl!(new_state)
+            Ok(new_state) -> run_repl_loop!(new_state)
             Err(exit) -> Err(exit)
     
-    run_repl!(initial_state)
+    run_repl_loop!(initial_state)
 
 # Test Env
 expect
