@@ -1,71 +1,77 @@
-app [main!] { pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.19.0/Hj-J_zxz7V9YurCSTFcFdu6cQJie4guzsPMUi5kBYUk.tar.br" }
+app "roc-lisp"
+    packages {
+        pf: "https://github.com/roc-lang/basic-cli/releases/download/0.19.0/Hj-J_zxz7V9YurCSTFcFdu6cQJie4guzsPMUi5kBYUk.tar.br"
+    }
+    imports [
+        pf.Stdout,
+        pf.Stdin,
+        pf.Stderr,
+        pf.Arg,
+    ]
+    provides [main] to pf
 
 # Based on Peter Norvig's Python implementation
 # https://norvig.com/lispy.html
 
-import pf.Stdout
-import pf.Stdin
-import pf.Stderr
-
-tokenize = \s ->
+tokenize = |s|
     s
-    |> Str.replace_each "(" " ( "
-    |> Str.replace_each ")" " ) "
-    |> Str.replace_each "\r" " "
-    |> Str.replace_each "\n" " "
-    |> Str.replace_each "\t" " "
-    |> Str.split " "
-    |> List.dropIf \e -> e == ""
+    |> Str.replace_each("(", " ( ")
+    |> Str.replace_each(")", " ) ")
+    |> Str.replace_each("\r", " ")
+    |> Str.replace_each("\n", " ")
+    |> Str.replace_each("\t", " ")
+    |> Str.split_on(" ")
+    |> List.drop_if(|e| e == "")
 
-expect tokenize "(1 2(3))" == ["(", "1", "2", "(", "3", ")", ")"]
+# expect tokenize("(1 2(3))") == ["(", "1", "2", "(", "3", ")", ")"]
 
 Ast : [AtomNode Str, ListNode (List Ast)]
 
 ReadErr : [MissingCloseParen, UnexpectedCloseParen]
 
-parseStr = \str -> readFromTokens (tokenize str)
+parse_str = |str| read_from_tokens(tokenize(str))
 
-readFromTokens : List Str -> Result (List Ast) ReadErr
-readFromTokens = \tokens ->
+read_from_tokens : List Str -> Result (List Ast) ReadErr
+read_from_tokens = |tokens|
     if tokens == [] then
-        Ok []
+        Ok([])
     else
-        when readOnceFromTokens tokens is
-            Ok (ast, moreTokens) ->
-                when readFromTokens moreTokens is
-                    Ok moreAsts -> Ok (List.prepend moreAsts ast)
-                    Err err -> Err err
+        when read_once_from_tokens(tokens) is
+            Ok((ast, more_tokens)) ->
+                when read_from_tokens(more_tokens) is
+                    Ok(more_asts) -> Ok(List.prepend(more_asts, ast))
+                    Err(err) -> Err(err)
 
-            Err err -> Err err
+            Err(err) -> Err(err)
 
-expect
-    (readFromTokens (tokenize "(1 2(3))"))
-    ==
-    Ok [ListNode [AtomNode "1", AtomNode "2", ListNode [AtomNode "3"]]]
+# expect
+#     read_from_tokens(tokenize("(1 2(3))"))
+#     ==
+#     Ok([ListNode([AtomNode("1"), AtomNode("2"), ListNode([AtomNode("3")])])])
 
-readOnceFromTokens : List Str -> Result (Ast, List Str) ReadErr
-readOnceFromTokens = \tokens ->
+read_once_from_tokens : List Str -> Result (Ast, List Str) ReadErr
+read_once_from_tokens = |tokens|
     when tokens is
-        [] -> Ok (AtomNode "Nil", [])
-        ["(", .. as rest] -> readListFromTokens rest []
-        [")", .. as rest] -> Err UnexpectedCloseParen
-        [atom, .. as rest] -> Ok (AtomNode atom, rest)
+        [] -> Ok((AtomNode("Nil"), []))
+        ["(", .. as rest] -> read_list_from_tokens(rest, [])
+        [")", .. as rest] -> Err(UnexpectedCloseParen)
+        [atom, .. as rest] -> Ok((AtomNode(atom), rest))
 
-readListFromTokens : List Str, List Ast -> Result ([ListNode (List Ast)], List Str) ReadErr
-readListFromTokens = \tokens, acc ->
+read_list_from_tokens : List Str, List Ast -> Result ([ListNode (List Ast)], List Str) ReadErr
+read_list_from_tokens = |tokens, acc|
     when tokens is
-        [] -> Err MissingCloseParen
-        [")", .. as rest] -> Ok (ListNode acc, rest)
+        [] -> Err(MissingCloseParen)
+        [")", .. as rest] -> Ok((ListNode(acc), rest))
         ["(", .. as rest] ->
-            when readListFromTokens rest [] is
-                Ok (listNode, nextRest) ->
-                    readListFromTokens nextRest (List.append acc listNode)
+            when read_list_from_tokens(rest, []) is
+                Ok((list_node, next_rest)) ->
+                    read_list_from_tokens(next_rest, List.append(acc, list_node))
 
-                Err err -> Err err
+                Err(err) -> Err(err)
 
         [atom, .. as rest] ->
-            nextAcc = List.concat acc [AtomNode atom]
-            readListFromTokens rest nextAcc
+            next_acc = List.concat(acc, [AtomNode(atom)])
+            read_list_from_tokens(rest, next_acc)
 
 Val : [
     IVal (Int Signed32),
@@ -85,442 +91,441 @@ Mem : Dict EnvKey Val
 Scope : Dict Str EnvKey
 Env : { mem : Mem, scope : Scope, nextSuffix : Nat }
 
-envGet : Env, Str -> Result Val Str
-envGet = \env, name ->
-    when Dict.get env.scope name is
-        Ok key ->
-            when Dict.get env.mem key is
-                Ok val -> Ok val
-                Err _ -> Err "Name '$(name)' bound to missing reference (interpreter bug)"
+env_get : Env, Str -> Result Val Str
+env_get = |env, name|
+    when Dict.get(env.scope, name) is
+        Ok(key) ->
+            when Dict.get(env.mem, key) is
+                Ok(val) -> Ok(val)
+                Err(_) -> Err("Name '${name}' bound to missing reference (interpreter bug)")
 
-        Err _ -> Err "Name '$(name)' not bound in scope"
+        Err(_) -> Err("Name '${name}' not bound in scope")
 
-envContains : Env, Str -> Bool
-envContains = \env, name ->
-    when Dict.get env.scope name is
-        Ok key -> Bool.true
-        Err _ -> Bool.false
+env_contains : Env, Str -> Bool
+env_contains = |env, name|
+    when Dict.get(env.scope, name) is
+        Ok(key) -> Bool.true
+        Err(_) -> Bool.false
 
-envSet : Env, Str, Val -> Env
-envSet = \env, name, val ->
-    when Dict.get env.scope name is
-        Ok key ->
-            mem2 = Dict.insert env.mem key val
+env_set : Env, Str, Val -> Env
+env_set = |env, name, val|
+    when Dict.get(env.scope, name) is
+        Ok(key) ->
+            mem2 = Dict.insert(env.mem, key, val)
             { env & mem: mem2 }
 
-        Err _ ->
+        Err(_) ->
             key = (name, env.nextSuffix)
-            nextSuffix = env.nextSuffix + 1
-            mem = Dict.insert env.mem key val
-            scope = Dict.insert env.scope name key
-            { mem, scope, nextSuffix }
+            next_suffix = env.nextSuffix + 1
+            mem = Dict.insert(env.mem, key, val)
+            scope = Dict.insert(env.scope, name, key)
+            { mem, scope, nextSuffix: next_suffix }
 
-envShadow : Env, Scope, Str, Val -> (Env, Scope)
-envShadow = \env, auxScope, name, val ->
+env_shadow : Env, Scope, Str, Val -> (Env, Scope)
+env_shadow = |env, aux_scope, name, val|
     key = (name, env.nextSuffix)
-    nextSuffix = env.nextSuffix + 1
-    mem = Dict.insert env.mem key val
-    scope = Dict.insert env.scope name key
-    auxScope2 = Dict.insert auxScope name key
-    ({ mem, scope, nextSuffix }, auxScope2)
+    next_suffix = env.nextSuffix + 1
+    mem = Dict.insert(env.mem, key, val)
+    scope = Dict.insert(env.scope, name, key)
+    aux_scope2 = Dict.insert(aux_scope, name, key)
+    ({ mem, scope, nextSuffix: next_suffix }, aux_scope2)
 
-emptyEnv = { mem: Dict.empty {}, scope: Dict.empty {}, nextSuffix: 0 }
+empty_env = { mem: Dict.empty({}), scope: Dict.empty({}), nextSuffix: 0 }
 
-defaultEnv =
-    setBuiltIn = \env, name ->
-        envSet env name (BuiltInVal name)
-    emptyEnv
-    |> envSet "nil" (ListVal [])
-    |> envSet "t" TVal
-    |> setBuiltIn "+"
-    |> setBuiltIn "-"
-    |> setBuiltIn "*"
-    |> setBuiltIn "/"
-    |> setBuiltIn ">"
-    |> setBuiltIn "<"
-    |> setBuiltIn ">="
-    |> setBuiltIn "<="
-    |> setBuiltIn "="
-    |> setBuiltIn "cons"
-    |> setBuiltIn "car"
-    |> setBuiltIn "cdr"
-    |> setBuiltIn "length"
-    |> setBuiltIn "list"
-    |> setBuiltIn "list?"
-    |> setBuiltIn "not"
-    |> setBuiltIn "equal?"
-    |> setBuiltIn "procedure?"
-    |> setBuiltIn "symbol?"
+default_env =
+    set_built_in = |env, name|
+        env_set(env, name, BuiltInVal(name))
+    empty_env
+    |> env_set("nil", ListVal([]))
+    |> env_set("t", TVal)
+    |> set_built_in("+")
+    |> set_built_in("-")
+    |> set_built_in("*")
+    |> set_built_in("/")
+    |> set_built_in(">")
+    |> set_built_in("<")
+    |> set_built_in(">=")
+    |> set_built_in("<=")
+    |> set_built_in("=")
+    |> set_built_in("cons")
+    |> set_built_in("car")
+    |> set_built_in("cdr")
+    |> set_built_in("length")
+    |> set_built_in("list")
+    |> set_built_in("list?")
+    |> set_built_in("not")
+    |> set_built_in("equal?")
+    |> set_built_in("procedure?")
+    |> set_built_in("symbol?")
 
-lispStr : Ast -> Str
-lispStr = \ast ->
+lisp_str : Ast -> Str
+lisp_str = |ast|
     # Convert expression back into a Lisp-readable string
     when ast is
-        AtomNode s -> s
-        ListNode asts ->
-            childStrs = List.map asts lispStr
-            childrenStr = Str.join_with childStrs " "
-            "( $(childrenStr) )"
+        AtomNode(s) -> s
+        ListNode(asts) ->
+            child_strs = List.map(asts, lisp_str)
+            children_str = Str.join_with(child_strs, " ")
+            "( ${children_str} )"
 
-expect
-    results =
-        "(1 2(5))"
-        |> tokenize
-        |> readFromTokens
-        |> Result.with_default []
-        |> List.map lispStr
-    dbg results
+# expect
+#     results =
+#         "(1 2(5))"
+#         |> tokenize
+#         |> read_from_tokens
+#         |> Result.with_default([])
+#         |> List.map(lisp_str)
+# 
+#     results == ["( 1 2 ( 5 ) )"]
 
-    results == ["( 1 2 ( 5 ) )"]
-
-valStr : Val -> Str
-valStr = \val ->
+val_str : Val -> Str
+val_str = |val|
     # Convert expression back into a Lisp-readable string
     when val is
-        IVal n -> Num.toStr n
-        ListVal vals ->
-            childStrs = List.map vals valStr
-            childrenStr = Str.join_with childStrs " "
-            "( $(childrenStr) )"
+        IVal(n) -> Num.to_str(n)
+        ListVal(vals) ->
+            child_strs = List.map(vals, val_str)
+            children_str = Str.join_with(child_strs, " ")
+            "( ${children_str} )"
 
         TVal -> "t"
-        LambdaVal params body _ ->
-            paramsStr = Str.join_with params " "
-            bodyStr = body |> List.map lispStr |> Str.join_with " "
-            "(lambda ($(paramsStr)) $(bodyStr)"
+        LambdaVal(params, body, _) ->
+            params_str = Str.join_with(params, " ")
+            body_str = body |> List.map(lisp_str) |> Str.join_with(" ")
+            "(lambda (${params_str}) ${body_str}"
 
-        BuiltInVal name ->
-            "#builtIn-$(name)"
+        BuiltInVal(name) ->
+            "#builtIn-${name}"
 
-        SymVal s -> s
-        ErrVal s -> s
-valEqual : Val, Val -> Bool
-valEqual = \a, b ->
+        SymVal(s) -> s
+        ErrVal(s) -> s
+val_equal : Val, Val -> Bool
+val_equal = |a, b|
     when (a, b) is
-        (IVal iA, IVal iB) -> iA == iB
+        (IVal(iA), IVal(iB)) -> iA == iB
         (TVal, TVal) -> Bool.true
-        (ListVal aVals, ListVal bVals) ->
-            if List.len aVals == List.len bVals then
-                List.all (List.map2 aVals bVals valEqual) \x -> x
+        (ListVal(aVals), ListVal(bVals)) ->
+            if List.len(aVals) == List.len(bVals) then
+                List.all(List.map2(aVals, bVals, val_equal), |x| x)
             else
                 Bool.false
 
-        (BuiltInVal aName, BuiltInVal bName) -> aName == bName
-        (SymVal aName, SymVal bName) -> aName == bName
+        (BuiltInVal(aName), BuiltInVal(bName)) -> aName == bName
+        (SymVal(aName), SymVal(bName)) -> aName == bName
         (_, _) -> Bool.false
 
-expect valEqual (IVal 2) (IVal 2)
-expect !(valEqual (IVal 1) (IVal 2))
-expect valEqual (ListVal [TVal]) (ListVal [TVal])
-expect !(valEqual (ListVal [IVal 1]) (ListVal [IVal 2]))
-expect !(valEqual (ListVal [IVal 1]) (ListVal [IVal 1, IVal 2]))
+expect val_equal(IVal(2), IVal(2))
+expect !(val_equal(IVal(1), IVal(2)))
+expect val_equal(ListVal([TVal]), ListVal([TVal]))
+expect !(val_equal(ListVal([IVal(1)]), ListVal([IVal(2)])))
+expect !(val_equal(ListVal([IVal(1)]), ListVal([IVal(1), IVal(2)])))
 
-builtIn2Arg = \name, f ->
-    BuiltInVal name \args ->
+built_in_2_arg = |name, f|
+    BuiltInVal(name, |args|
         when args is
-            [arg1, arg2] -> f arg1 arg2
-            _ -> ErrVal "Wrong number of args for '$(name)'"
+            [arg1, arg2] -> f(arg1, arg2)
+            _ -> ErrVal("Wrong number of args for '${name}'"))
 
-evalAtom : Str, Env -> Val
-evalAtom = \s, env ->
-    when Str.to_i32 s is
-        Ok n -> IVal n
-        Err _ ->
+eval_atom : Str, Env -> Val
+eval_atom = |s, env|
+    when Str.to_i32(s) is
+        Ok(n) -> IVal(n)
+        Err(_) ->
             # Symbol
-            when envGet env s is
-                Ok val -> val
-                Err msg -> ErrVal msg
+            when env_get(env, s) is
+                Ok(val) -> val
+                Err(msg) -> ErrVal(msg)
 
-evalIf : List Ast, Env -> (Val, Env)
-evalIf = \rest, env ->
-    doErr = \s -> (ErrVal s, env)
+eval_if : List Ast, Env -> (Val, Env)
+eval_if = |rest, env|
+    do_err = |s| (ErrVal(s), env)
     when rest is
         [test, conseq, alt] ->
-            (testVal, env2) = eval test env
-            when testVal is
-                ErrVal err -> (ErrVal err, env2)
-                ListVal [] -> eval alt env2
-                _ -> eval conseq env2
+            (test_val, env2) = eval(test, env)
+            when test_val is
+                ErrVal(err) -> (ErrVal(err), env2)
+                ListVal([]) -> eval(alt, env2)
+                _ -> eval(conseq, env2)
 
-        _ -> doErr "Wrong number of args for if"
+        _ -> do_err("Wrong number of args for if")
 quote : Ast -> Val
-quote = \ast ->
+quote = |ast|
     when ast is
-        AtomNode s -> SymVal s
-        ListNode children -> ListVal (List.map children quote)
+        AtomNode(s) -> SymVal(s)
+        ListNode(children) -> ListVal(List.map(children, quote))
 eval : Ast, Env -> (Val, Env)
-eval = \ast, env ->
+eval = |ast, env|
     # Evaluate an expression in an environment
-    doErr = \s -> (ErrVal s, env)
+    do_err = |s| (ErrVal(s), env)
     when ast is
-        AtomNode s -> (evalAtom s env, env)
-        ListNode items -> evalList items env
+        AtomNode(s) -> (eval_atom(s, env), env)
+        ListNode(items) -> eval_list(items, env)
 
-applyBuiltIn : Str, List Ast, Env -> (Val, Env)
-applyBuiltIn = \name, argForms, env ->
-    naryReduceFn : List Ast, Val, Env, (Val, Val -> Val) -> (Val, Env)
-    naryReduceFn = \argForms1, start, env1, fn ->
-        when argForms1 is
+apply_built_in : Str, List Ast, Env -> (Val, Env)
+apply_built_in = |name, arg_forms, env|
+    nary_reduce_fn : List Ast, Val, Env, (Val, Val -> Val) -> (Val, Env)
+    nary_reduce_fn = |arg_forms1, start, env1, fn|
+        when arg_forms1 is
             [] -> (start, env1)
             [first, .. as rest] ->
-                (firstVal, env2) = eval first env1
-                naryReduceFn rest (fn start firstVal) env2 fn
-    binaryFn = \fn ->
-        when argForms is
+                (first_val, env2) = eval(first, env1)
+                nary_reduce_fn(rest, fn(start, first_val), env2, fn)
+    binary_fn = |fn|
+        when arg_forms is
             [a, b] ->
-                (aVal, env2) = eval a env
-                (bVal, env3) = eval b env2
-                (fn aVal bVal, env3)
+                (a_val, env2) = eval(a, env)
+                (b_val, env3) = eval(b, env2)
+                (fn(a_val, b_val), env3)
 
-            _ -> (ErrVal "$(name) requires 2 args", env)
+            _ -> (ErrVal("${name} requires 2 args"), env)
     when name is
         "+" ->
-            naryReduceFn argForms (IVal 0) env \a, b ->
+            nary_reduce_fn(arg_forms, IVal(0), env, |a, b|
                 when (a, b) is
-                    (IVal iA, IVal iB) -> IVal (iA + iB)
-                    _ -> ErrVal "TypeError in +, args $(valStr a) $(valStr b)"
+                    (IVal(iA), IVal(iB)) -> IVal(iA + iB)
+                    _ -> ErrVal("TypeError in +, args ${val_str(a)} ${val_str(b)}"))
 
         "-" ->
-            when argForms is
-                [] -> (IVal 0, env)
+            when arg_forms is
+                [] -> (IVal(0), env)
                 [first] ->
-                    (firstVal, env2) = eval first env
-                    when firstVal is
-                        IVal a -> (IVal (0 - a), env2)
-                        _ -> (ErrVal "TypeError in -, arg $(valStr firstVal)", env2)
+                    (first_val, env2) = eval(first, env)
+                    when first_val is
+                        IVal(a) -> (IVal(0 - a), env2)
+                        _ -> (ErrVal("TypeError in -, arg ${val_str(first_val)}"), env2)
 
                 [first, .. as rest] ->
-                    (firstVal, env2) = eval first env
-                    naryReduceFn rest firstVal env2 \a, b ->
+                    (first_val, env2) = eval(first, env)
+                    nary_reduce_fn(rest, first_val, env2, |a, b|
                         when (a, b) is
-                            (IVal iA, IVal iB) -> IVal (iA - iB)
-                            _ -> ErrVal "TypeError in -, args $(valStr a) $(valStr b)"
+                            (IVal(iA), IVal(iB)) -> IVal(iA - iB)
+                            _ -> ErrVal("TypeError in -, args ${val_str(a)} ${val_str(b)}"))
 
         "*" ->
-            naryReduceFn argForms (IVal 1) env \a, b ->
+            nary_reduce_fn(arg_forms, IVal(1), env, |a, b|
                 when (a, b) is
-                    (IVal iA, IVal iB) -> IVal (iA * iB)
-                    _ -> ErrVal "TypeError in *, args $(valStr a) $(valStr b)"
+                    (IVal(iA), IVal(iB)) -> IVal(iA * iB)
+                    _ -> ErrVal("TypeError in *, args ${val_str(a)} ${val_str(b)}"))
 
         "/" ->
-            binaryFn \aVal, bVal ->
-                when (aVal, bVal) is
-                    (IVal iA, IVal iB) ->
-                        when Num.divTruncChecked iA iB is
-                            Ok n -> IVal n
-                            Err DivByZero -> ErrVal "DivByZero"
+            binary_fn(|a_val, b_val|
+                when (a_val, b_val) is
+                    (IVal(iA), IVal(iB)) ->
+                        when Num.div_trunc_checked(iA, iB) is
+                            Ok(n) -> IVal(n)
+                            Err(DivByZero) -> ErrVal("DivByZero")
 
-                    _ -> ErrVal "TypeError in /, args $(valStr aVal) $(valStr bVal)"
+                    _ -> ErrVal("TypeError in /, args ${val_str(a_val)} ${val_str(b_val)}"))
 
         "<" ->
-            binaryFn \aVal, bVal ->
-                when (aVal, bVal) is
-                    (IVal iA, IVal iB) ->
+            binary_fn(|a_val, b_val|
+                when (a_val, b_val) is
+                    (IVal(iA), IVal(iB)) ->
                         if iA < iB then TVal else nilVal
 
-                    _ -> ErrVal "TypeError in <, args $(valStr aVal) $(valStr bVal)"
+                    _ -> ErrVal("TypeError in <, args ${val_str(a_val)} ${val_str(b_val)}"))
 
         ">" ->
-            binaryFn \aVal, bVal ->
-                when (aVal, bVal) is
-                    (IVal iA, IVal iB) ->
+            binary_fn(|a_val, b_val|
+                when (a_val, b_val) is
+                    (IVal(iA), IVal(iB)) ->
                         if iA > iB then TVal else nilVal
 
-                    _ -> ErrVal "TypeError in >, args $(valStr aVal) $(valStr bVal)"
+                    _ -> ErrVal("TypeError in >, args ${val_str(a_val)} ${val_str(b_val)}"))
 
         ">=" ->
-            binaryFn \aVal, bVal ->
-                when (aVal, bVal) is
-                    (IVal iA, IVal iB) ->
+            binary_fn(|a_val, b_val|
+                when (a_val, b_val) is
+                    (IVal(iA), IVal(iB)) ->
                         if iA >= iB then TVal else nilVal
 
-                    _ -> ErrVal "TypeError in >=, args $(valStr aVal) $(valStr bVal)"
+                    _ -> ErrVal("TypeError in >=, args ${val_str(a_val)} ${val_str(b_val)}"))
 
         "<=" ->
-            binaryFn \aVal, bVal ->
-                when (aVal, bVal) is
-                    (IVal iA, IVal iB) ->
+            binary_fn(|a_val, b_val|
+                when (a_val, b_val) is
+                    (IVal(iA), IVal(iB)) ->
                         if iA <= iB then TVal else nilVal
 
-                    _ -> ErrVal "TypeError in <=, args $(valStr aVal) $(valStr bVal)"
+                    _ -> ErrVal("TypeError in <=, args ${val_str(a_val)} ${val_str(b_val)}"))
 
         "cons" ->
-            when argForms is
+            when arg_forms is
                 [a, b] ->
-                    (aVal, env2) = eval a env
-                    (bVal, env3) = eval b env2
-                    when bVal is
-                        ListVal bVals -> (ListVal (List.prepend bVals aVal), env3)
-                        _ -> (ErrVal "cons 2nd arg must be a list", env3)
+                    (a_val, env2) = eval(a, env)
+                    (b_val, env3) = eval(b, env2)
+                    when b_val is
+                        ListVal(b_vals) -> (ListVal(List.prepend(b_vals, a_val)), env3)
+                        _ -> (ErrVal("cons 2nd arg must be a list"), env3)
 
-                _ -> (ErrVal "cons requires 2 args", env)
+                _ -> (ErrVal("cons requires 2 args"), env)
 
         "car" ->
-            when argForms is
+            when arg_forms is
                 [a] ->
-                    (aVal, env2) = eval a env
-                    when aVal is
-                        ListVal [] -> (ErrVal "car arg must be a non-empty list", env2)
-                        ListVal [first, ..] -> (first, env2)
-                        _ -> (ErrVal "car arg must be a list", env2)
+                    (a_val, env2) = eval(a, env)
+                    when a_val is
+                        ListVal([]) -> (ErrVal("car arg must be a non-empty list"), env2)
+                        ListVal([first, ..]) -> (first, env2)
+                        _ -> (ErrVal("car arg must be a list"), env2)
 
-                _ -> (ErrVal "car requires 1 arg, got $(Inspect.to_str argForms)", env)
+                _ -> (ErrVal("car requires 1 arg, got ${Inspect.to_str(arg_forms)}"), env)
 
         "cdr" ->
-            when argForms is
+            when arg_forms is
                 [a] ->
-                    (aVal, env2) = eval a env
-                    when aVal is
-                        ListVal [] -> (ErrVal "cdr arg must be a non-empty list", env2)
-                        ListVal [_, .. as rest] -> (ListVal rest, env2)
-                        _ -> (ErrVal "cdr arg must be a list", env2)
+                    (a_val, env2) = eval(a, env)
+                    when a_val is
+                        ListVal([]) -> (ErrVal("cdr arg must be a non-empty list"), env2)
+                        ListVal([_, .. as rest]) -> (ListVal(rest), env2)
+                        _ -> (ErrVal("cdr arg must be a list"), env2)
 
-                _ -> (ErrVal "cdr requires 1 arg", env)
+                _ -> (ErrVal("cdr requires 1 arg"), env)
 
         "length" ->
-            when argForms is
+            when arg_forms is
                 [a] ->
-                    (aVal, env2) = eval a env
-                    when aVal is
-                        ListVal aVals -> (IVal (Num.intCast (List.len aVals)), env2)
-                        _ -> (ErrVal "length arg must be a list", env2)
+                    (a_val, env2) = eval(a, env)
+                    when a_val is
+                        ListVal(a_vals) -> (IVal(Num.int_cast(List.len(a_vals))), env2)
+                        _ -> (ErrVal("length arg must be a list"), env2)
 
-                _ -> (ErrVal "length requires 1 arg", env)
+                _ -> (ErrVal("length requires 1 arg"), env)
 
         "list" ->
-            when argForms is
-                [] -> (ListVal [], env)
+            when arg_forms is
+                [] -> (ListVal([]), env)
                 [first, .. as rest] ->
-                    (firstVal, env2) = eval first env
-                    (restVal, env3) = applyBuiltIn "list" rest env2
-                    when restVal is
-                        ListVal restVals -> (ListVal (List.prepend restVals firstVal), env3)
-                        ErrVal _ -> (restVal, env3)
-                        _ -> (ErrVal "list returned non-list (interpreter bug)", env3)
+                    (first_val, env2) = eval(first, env)
+                    (rest_val, env3) = apply_built_in("list", rest, env2)
+                    when rest_val is
+                        ListVal(rest_vals) -> (ListVal(List.prepend(rest_vals, first_val)), env3)
+                        ErrVal(_) -> (rest_val, env3)
+                        _ -> (ErrVal("list returned non-list (interpreter bug)"), env3)
 
         "list?" ->
-            when argForms is
+            when arg_forms is
                 [item] ->
-                    (itemVal, env2) = eval item env
-                    when itemVal is
-                        ListVal restVals -> (TVal, env2)
-                        ErrVal _ -> (itemVal, env2)
+                    (item_val, env2) = eval(item, env)
+                    when item_val is
+                        ListVal(_) -> (TVal, env2)
+                        ErrVal(_) -> (item_val, env2)
                         _ -> (nilVal, env2)
 
-                _ -> (ErrVal "list? requires 1 arg", env)
+                _ -> (ErrVal("list? requires 1 arg"), env)
 
         "not" ->
-            when argForms is
+            when arg_forms is
                 [item] ->
-                    (itemVal, env2) = eval item env
-                    when itemVal is
-                        ListVal [] -> (TVal, env2)
-                        ErrVal _ -> (itemVal, env2)
+                    (item_val, env2) = eval(item, env)
+                    when item_val is
+                        ListVal([]) -> (TVal, env2)
+                        ErrVal(_) -> (item_val, env2)
                         _ -> (nilVal, env2)
 
-                _ -> (ErrVal "not requires 1 arg", env)
+                _ -> (ErrVal("not requires 1 arg"), env)
 
         "equal?" ->
-            binaryFn \aVal, bVal ->
-                if valEqual aVal bVal then TVal else nilVal
+            binary_fn(|a_val, b_val|
+                if val_equal(a_val, b_val) then TVal else nilVal)
 
         "procedure?" ->
-            when argForms is
+            when arg_forms is
                 [a] ->
-                    (aVal, env2) = eval a env
-                    when aVal is
-                        LambdaVal _ _ _ -> (TVal, env2)
-                        BuiltInVal _ -> (TVal, env2)
+                    (a_val, env2) = eval(a, env)
+                    when a_val is
+                        LambdaVal(_, _, _) -> (TVal, env2)
+                        BuiltInVal(_) -> (TVal, env2)
                         _ -> (nilVal, env2)
 
-                _ -> (ErrVal "procedure? requires 1 arg", env)
+                _ -> (ErrVal("procedure? requires 1 arg"), env)
 
         "symbol?" ->
-            when argForms is
+            when arg_forms is
                 [a] ->
-                    (aVal, env2) = eval a env
-                    when aVal is
-                        SymVal _ -> (TVal, env2)
+                    (a_val, env2) = eval(a, env)
+                    when a_val is
+                        SymVal(_) -> (TVal, env2)
                         _ -> (nilVal, env2)
 
-                _ -> (ErrVal "symbol? requires 1 arg", env)
+                _ -> (ErrVal("symbol? requires 1 arg"), env)
 
-        _ -> (ErrVal "Unknown built-in $(name)", env)
+        _ -> (ErrVal("Unknown built-in ${name}"), env)
 apply : Val, List Ast, Env -> (Val, Env)
-apply = \fn, argForms, env ->
-    doErr = \s -> (ErrVal s, env)
+apply = |fn, arg_forms, env|
+    do_err = |s| (ErrVal(s), env)
     when fn is
-        LambdaVal params body scope ->
-            if List.len params == List.len argForms then
+        LambdaVal(params, body, scope) ->
+            if List.len(params) == List.len(arg_forms) then
                 # Evaluate in the lambda's scope, then proceed with the old scope.
-                env2 = bindArgs params argForms env scope
-                (val, env3) = evalForms body env2
+                env2 = bind_args(params, arg_forms, env, scope)
+                (val, env3) = eval_forms(body, env2)
                 (val, { env3 & scope: env.scope })
             else
-                doErr "Wrong number of args"
+                do_err("Wrong number of args")
 
-        BuiltInVal name ->
-            applyBuiltIn name argForms env
+        BuiltInVal(name) ->
+            apply_built_in(name, arg_forms, env)
 
-        _ -> doErr "Can't apply non-procedure"
+        _ -> do_err("Can't apply non-procedure")
 
-evalList : List Ast, Env -> (Val, Env)
-evalList = \items, env ->
-    doErr = \s -> (ErrVal s, env)
+eval_list : List Ast, Env -> (Val, Env)
+eval_list = |items, env|
+    do_err = |s| (ErrVal(s), env)
     when items is
-        [] -> (ListVal [], env)
+        [] -> (ListVal([]), env)
         [first, .. as rest] ->
             when first is
-                AtomNode "quote" ->
+                AtomNode("quote") ->
                     when rest is
-                        [arg] -> (quote arg, env)
-                        _ -> doErr "Wrong number of args for quote"
+                        [arg] -> (quote(arg), env)
+                        _ -> do_err("Wrong number of args for quote")
 
-                AtomNode "if" -> evalIf rest env
-                AtomNode "define" ->
+                AtomNode("if") -> eval_if(rest, env)
+                AtomNode("define") ->
                     when rest is
-                        [AtomNode name, exp] ->
+                        [AtomNode(name), exp] ->
                             # Set placeholder value for recursive lambda functions.
-                            env2 = envSet env name nilVal
-                            (val, env3) = eval exp env2
+                            env2 = env_set(env, name, nilVal)
+                            (val, env3) = eval(exp, env2)
                             # Set real value
-                            env4 = envSet env3 name val
+                            env4 = env_set(env3, name, val)
                             (nilVal, env4)
 
-                        [_, _] -> doErr "First arg of define must be a symbol"
-                        _ -> doErr "Wrong number of args for define"
+                        [_, _] -> do_err("First arg of define must be a symbol")
+                        _ -> do_err("Wrong number of args for define")
 
-                AtomNode "set!" ->
+                AtomNode("set!") ->
                     when rest is
-                        [AtomNode name, exp] ->
-                            if envContains env name then
-                                (val, env2) = eval exp env
-                                env3 = envSet env2 name val
+                        [AtomNode(name), exp] ->
+                            if env_contains(env, name) then
+                                (val, env2) = eval(exp, env)
+                                env3 = env_set(env2, name, val)
                                 (nilVal, env3)
                             else
-                                doErr "Cannot set! on undefined name '$(name)'"
+                                do_err("Cannot set! on undefined name '${name}'")
 
-                        [_, _] -> doErr "First arg of set! must be a symbol"
-                        _ -> doErr "Wrong number of args for set!"
+                        [_, _] -> do_err("First arg of set! must be a symbol")
+                        _ -> do_err("Wrong number of args for set!")
 
-                AtomNode "lambda" ->
+                AtomNode("lambda") ->
                     when rest is
-                        [ListNode params, .. as body] ->
+                        [ListNode(params), .. as body] ->
                             # Check that they are symbols?
-                            paramNames = List.map params lispStr
-                            (LambdaVal paramNames body env.scope, env)
+                            param_names = List.map(params, lisp_str)
+                            (LambdaVal(param_names, body, env.scope), env)
 
-                        _ -> doErr "Invalid lambda, expected param list"
+                        _ -> do_err("Invalid lambda, expected param list")
 
-                AtomNode s ->
-                    firstVal = evalAtom s env
-                    apply firstVal rest env
+                AtomNode(s) ->
+                    first_val = eval_atom(s, env)
+                    apply(first_val, rest, env)
 
-                ListNode asts ->
-                    (firstVal, env2) = evalList asts env
-                    apply firstVal rest env2
-bindArgs : List Str, List Ast, Env, Scope -> Env
-bindArgs = \params, args, env, scope ->
+                ListNode(asts) ->
+                    (first_val, env2) = eval_list(asts, env)
+                    apply(first_val, rest, env2)
+bind_args : List Str, List Ast, Env, Scope -> Env
+bind_args = |params, args, env, scope|
     # dbg params
 
     # dbg args
@@ -528,252 +533,251 @@ bindArgs = \params, args, env, scope ->
     when (params, args) is
         ([], _) -> { env & scope }
         (_, []) -> { env & scope }
-        ([param, .. as paramRest], [arg, .. as argRest]) ->
-            (val, env2) = eval arg env
-            # dbg valStr val
+        ([param, .. as param_rest], [arg, .. as arg_rest]) ->
+            (val, env2) = eval(arg, env)
+            # dbg val_str val
 
-            (env3, scope2) = envShadow env2 scope param val
-            bindArgs paramRest argRest env3 scope2
+            (env3, scope2) = env_shadow(env2, scope, param, val)
+            bind_args(param_rest, arg_rest, env3, scope2)
 
         (_, _) -> env # Shouldn't be needed?
 
-evalForms : List Ast, Env -> (Val, Env)
-evalForms = \asts, env ->
+eval_forms : List Ast, Env -> (Val, Env)
+eval_forms = |asts, env|
     when asts is
-        [] -> (ListVal [], env)
-        [first] -> eval first env
+        [] -> (ListVal([]), env)
+        [first] -> eval(first, env)
         [first, .. as rest] ->
-            (val, env2) = eval first env
-            evalForms rest env2
+            (val, env2) = eval(first, env)
+            eval_forms(rest, env2)
 
-readEvalPrint : Str -> Str
-readEvalPrint = \str ->
-    env = defaultEnv
-    readResult = str |> tokenize |> readFromTokens
-    when readResult is
-        Ok asts ->
-            (val, _) = asts |> evalForms env
-            valStr val
+read_eval_print : Str -> Str
+read_eval_print = |str|
+    env = default_env
+    read_result = str |> tokenize |> read_from_tokens
+    when read_result is
+        Ok(asts) ->
+            (val, _) = asts |> eval_forms(env)
+            val_str(val)
 
-        Err err -> Inspect.to_str err
+        Err(err) -> Inspect.to_str(err)
 
-ReplState : { pendingInput : Str, env : Env }
+ReplState : { pending_input : Str, env : Env }
 
-run : Result {} _
-run =
-    readEvalPrintTask : ReplState -> Result [Done {}, Step ReplState] _
-    readEvalPrintTask = \state ->
-        { pendingInput, env } = state
-        when Stdout.write "> " |> Task.result! is
-            Ok _ ->
-                when Stdin.line |> Task.result! is
-                    Ok input ->
-                        combinedInput = "$(pendingInput)\n$(input)"
-                        readResult =
-                            combinedInput
-                            |> tokenize
-                            |> readFromTokens
-                        when readResult is
-                            Ok asts ->
-                                (val, env2) = evalForms asts env
-                                when Stdout.line (valStr val) |> Task.result! is
-                                    Ok _ ->
-                                        nextState = { env: env2, pendingInput: "" }
-                                        Task.ok (Step nextState)
+main : List Arg.Arg -> Result {} [Exit I32 Str]_
+main = |_args|
+    # Simple REPL implementation
+    initial_state = { pending_input: "", env: default_env }
+    
+    # Run a single iteration of the REPL
+    repl_step = |state|
+        { pending_input, env } = state
+        _ = Stdout.write!("> ")
+        
+        when Stdin.line!({}) is
+            Ok(input) ->
+                combined_input = "${pending_input}\n${input}"
+                read_result =
+                    combined_input
+                    |> tokenize
+                    |> read_from_tokens
+                when read_result is
+                    Ok(asts) ->
+                        (val, env2) = eval_forms(asts, env)
+                        _ = Stdout.line!(val_str(val))
+                        Ok({ env: env2, pending_input: "" })
 
-                                    Err err -> Err err
+                    Err(MissingCloseParen) ->
+                        Ok({ env, pending_input: combined_input })
 
-                            Err MissingCloseParen ->
-                                nextState = { env, pendingInput: combinedInput }
-                                Result (Step nextState)
+                    Err(read_err) ->
+                        _ = Stdout.line!(Inspect.to_str(read_err))
+                        Ok({ env: env, pending_input: "" })
 
-                            Err readErr ->
-                                when Stdout.line (Inspect.to_str readErr) |> Task.result! is
-                                    Ok _ -> Task.ok (Step { env: env, pendingInput: "" })
-                                    Err err -> Task.err (StdoutErr (Other (Inspect.to_str err)))
-
-                    Err (StdinErr EndOfFile) -> Task.ok (Done {})
-                    Err err -> Task.err (StdoutErr (Other (Inspect.to_str err)))
-
-            Err err -> Task.err err
-    initialState = { pendingInput: "", env: defaultEnv }
-    Task.loop! initialState readEvalPrintTask
-
-main = run |> Result.map_err printErr
-
-printErr : _ -> Task {} _
-printErr = \err ->
-    when err is
-        _ -> Stderr.line! "Error: $(Inspect.to_str err)"
+            Err(_) -> 
+                Err(Exit(0, "Goodbye!"))
+    
+    # Run the REPL until EOF or error
+    run_repl = |state|
+        when repl_step(state) is
+            Ok(new_state) -> run_repl(new_state)
+            Err(exit) -> Err(exit)
+    
+    run_repl(initial_state)
 
 # Test Env
 expect
-    env = emptyEnv
-    (envGet env "a") == Err "Name 'a' not bound in scope"
+    env = empty_env
+    (env_get(env, "a")) == Err("Name 'a' not bound in scope")
 expect
-    env = envSet emptyEnv "a" (IVal 1)
-    (envGet env "a") == Ok (IVal 1)
+    env = env_set(empty_env, "a", IVal(1))
+    (env_get(env, "a")) == Ok(IVal(1))
 
-# Test readEvalPrint
+# Test read_eval_print
 expect
-    result = readEvalPrint "1"
+    result = read_eval_print("1")
     dbg result
 
     result == "1"
 
 expect
-    result = readEvalPrint "()"
+    result = read_eval_print("()")
     dbg result
 
     result == "(  )"
 
 expect
-    result = readEvalPrint "(quote a)"
+    result = read_eval_print("(quote a)")
     dbg result
 
     result == "a"
 
 expect
-    result = readEvalPrint "(if 1 2 3)"
+    result = read_eval_print("(if 1 2 3)")
     dbg result
 
     result == "2"
 expect
-    result = readEvalPrint "(define a 4) a"
+    result = read_eval_print("(define a 4) a")
     dbg result
 
     result == "4"
 expect
-    result = readEvalPrint "(define a 4) (set! a 3) a"
+    result = read_eval_print("(define a 4) (set! a 3) a")
     dbg result
 
     result == "3"
 
 expect
-    result = readEvalPrint "(define a (lambda (b) b)) (a 1)"
+    result = read_eval_print("(define a (lambda (b) b)) (a 1)")
     dbg result
 
     result == "1"
 expect
     # Recursion
-    result = readEvalPrint
+    result = read_eval_print(
         """
         (define rec (lambda (a) (if a nil (rec (not a)))))
         (rec t)
         (rec nil)
         """
+    )
     result == "(  )"
 expect
     # Regression test for lambda scope issue
-    result = readEvalPrint
+    result = read_eval_print(
         """
         (define fib (lambda (n) (if (<= n 2) 1 (+ (fib (- n 1)) (fib (- n 2))))))
         (fib 6)
         """
+    )
     result == "8"
 
 expect
-    result = readEvalPrint "((lambda (b) b) 1)"
+    result = read_eval_print("((lambda (b) b) 1)")
     dbg result
 
     result == "1"
 
 expect
-    dbg readEvalPrint "(+ 1 1)"
+    dbg read_eval_print("(+ 1 1)")
 
-    "2" == readEvalPrint "(+ 1 1)"
+    "2" == read_eval_print("(+ 1 1)")
 expect
-    result = readEvalPrint "(- 1 1)"
+    result = read_eval_print("(- 1 1)")
     result == "0"
 expect
-    result = readEvalPrint "(- 1)"
+    result = read_eval_print("(- 1)")
     result == "-1"
 expect
-    result = readEvalPrint "(* 2 3)"
+    result = read_eval_print("(* 2 3)")
     result == "6"
 expect
-    result = readEvalPrint "(/ 5 2)"
+    result = read_eval_print("(/ 5 2)")
     result == "2" # Truncating div
 expect
-    result = readEvalPrint "(cons 1 nil)"
+    result = read_eval_print("(cons 1 nil)")
     result == "( 1 )"
 expect
-    result = readEvalPrint "(car (cons 1 (cons 2 nil)))"
+    result = read_eval_print("(car (cons 1 (cons 2 nil)))")
     result == "1"
 expect
-    result = readEvalPrint "(cdr (cons 1 (cons 2 nil)))"
+    result = read_eval_print("(cdr (cons 1 (cons 2 nil)))")
     result == "( 2 )"
 expect
-    result = readEvalPrint "(length (cons 1 (cons 2 nil)))"
+    result = read_eval_print("(length (cons 1 (cons 2 nil)))")
     result == "2"
 expect
-    result = readEvalPrint "(length (list 1 2))"
+    result = read_eval_print("(length (list 1 2))")
     result == "2"
 expect
-    result = readEvalPrint "(list? (list 1 2))"
+    result = read_eval_print("(list? (list 1 2))")
     result == "t"
 expect
-    result = readEvalPrint "(list? nil)"
+    result = read_eval_print("(list? nil)")
     result == "t"
 expect
-    result = readEvalPrint "(list? 43)"
+    result = read_eval_print("(list? 43)")
     result == "(  )"
 expect
-    result = readEvalPrint "(not nil)"
+    result = read_eval_print("(not nil)")
     result == "t"
 expect
-    result = readEvalPrint "(not t)"
+    result = read_eval_print("(not t)")
     result == "(  )"
 expect
-    result = readEvalPrint "(symbol? 4)"
+    result = read_eval_print("(symbol? 4)")
     result == "(  )"
 expect
-    result = readEvalPrint "(symbol? (quote a))"
+    result = read_eval_print("(symbol? (quote a))")
     result == "t"
 expect
-    result = readEvalPrint "(procedure? (lambda ()))"
+    result = read_eval_print("(procedure? (lambda ()))")
     result == "t"
 expect
-    result = readEvalPrint "(procedure? +)"
+    result = read_eval_print("(procedure? +)")
     result == "t"
 expect
-    result = readEvalPrint "(procedure? (quote +))"
+    result = read_eval_print("(procedure? (quote +))")
     result == "(  )"
 expect
     # Lexical scope
-    result = readEvalPrint "(define a 1) (define aGet (lambda () a)) (aGet)"
+    result = read_eval_print("(define a 1) (define aGet (lambda () a)) (aGet)")
     dbg result
 
     result == "1"
 expect
     # Lexical scope with update
-    result = readEvalPrint "(define a 1) (define aGet (lambda () a)) (set! a 2) (aGet)"
+    result = read_eval_print("(define a 1) (define aGet (lambda () a)) (set! a 2) (aGet)")
     dbg result
 
     result == "2"
 expect
     # Shadow Lexical scope
-    result = readEvalPrint
+    result = read_eval_print(
         """
             (define a 1)
             (define aGet (lambda () a))
             (define getWrap (lambda (a) (aGet)))
             (getWrap 2)
         """
+    )
     dbg result
 
     result == "1"
 expect
-    result = readEvalPrint
+    result = read_eval_print(
         """
             (define max (lambda (a b) (if (< a b) b a)))
             (max 3 4)
         """
+    )
     result == "4"
 expect
-    result = readEvalPrint
+    result = read_eval_print(
         """
             (define abs (lambda (a) (if (< a 0) (- a) a)))
             (abs -5)
         """
+    )
     result == "5"
