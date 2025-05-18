@@ -53,7 +53,7 @@ read_once_from_tokens = |tokens|
     when tokens is
         [] -> Ok((AtomNode("Nil"), []))
         ["(", .. as rest] -> read_list_from_tokens(rest, [])
-        [")", .. as _rest] -> Err(UnexpectedCloseParen)
+        [")", ..] -> Err(UnexpectedCloseParen)
         [atom, .. as rest] -> Ok((AtomNode(atom), rest))
 
 read_list_from_tokens : List Str, List Ast -> Result ([ListNode (List Ast)], List Str) ReadErr
@@ -462,17 +462,17 @@ apply = |fn, arg_forms, env|
                         when List.get(params, i) is
                             Ok(param) ->
                                 # Evaluate the argument in the original environment
-                                (val, _) = eval(arg, env)
+                                (arg_val, _) = eval(arg, env)
                                 # Bind the parameter in the lambda environment
-                                env_set(env_acc, param, val)
+                                env_set(env_acc, param, arg_val)
                             _ -> env_acc
                     )
                 
                 # Evaluate the body in the lambda's environment
-                (val, _) = eval_forms(body, lambda_env_with_args)
+                (result, _) = eval_forms(body, lambda_env_with_args)
                 
                 # Return the result with the original scope restored
-                (val, { env & scope: original_scope })
+                (result, { env & scope: original_scope })
             else
                 do_err("Wrong number of args")
 
