@@ -652,54 +652,50 @@ expect
 
     result == "1"
 
-# Commenting out recursive test that might cause issues
-# expect
-#     # Recursion
-#     result = read_eval_print(
-#         """
-#         (define rec (lambda (a) (if a nil (rec (not a)))))
-#         (rec t)
-#         """
-#     )
-#     result == "(  )"
-# Commenting out fibonacci test that might cause issues
-# expect
-#     # Regression test for lambda scope issue
-#     result = read_eval_print(
-#         """
-#         (define fib (lambda (n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))
-#         (fib 5)
-#         """
-#     )
-#     result == "5"
+expect
+    # Recursion
+    result = read_eval_print(
+        """
+        (define rec (lambda (a) (if a nil (rec (not a)))))
+        (rec t)
+        """
+    )
+    result == "(  )"
 
-# Keep only one lambda test
+expect
+    # Regression test for lambda scope issue
+    result = read_eval_print(
+        """
+        (define fib (lambda (n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))
+        (fib 5)
+        """
+    )
+    result == "5"
+
+
 expect
     result = read_eval_print("((lambda (b) b) 1)")
     dbg result
     result == "1"
 
-# Comment out the rest to avoid memory issues
-# expect
-#     dbg read_eval_print("(+ 1 1)")
-#     "2" == read_eval_print("(+ 1 1)")
-# expect
-#     result = read_eval_print("(- 1 1)")
-#     result == "0"
-# expect
-#     result = read_eval_print("(- 1)")
-#     result == "-1"
-# expect
-#     result = read_eval_print("(* 2 3)")
-#     result == "6"
-# expect
-#     result = read_eval_print("(/ 5 2)")
-#     result == "2" # Truncating div
-# expect
-#     result = read_eval_print("(cons 1 nil)")
-#     result == "( 1 )"
-# expect
-#     result = read_eval_print("(car (cons 1 (cons 2 nil)))")
-#     result == "1"
-# Comment out all remaining tests to avoid memory issues
-# Keep only the lambda test above
+expect
+    dbg read_eval_print("(+ 1 1)")
+    "2" == read_eval_print("(+ 1 1)")
+expect
+    result = read_eval_print("(- 1 1)")
+    result == "0"
+expect
+    result = read_eval_print("(- 1)")
+    result == "-1"
+expect
+    result = read_eval_print("(* 2 3)")
+    result == "6"
+expect
+    result = read_eval_print("(/ 5 2)")
+    result == "2" # Truncating div
+expect
+    result = read_eval_print("(cons 1 nil)")
+    result == "( 1 )"
+expect
+    result = read_eval_print("(car (cons 1 (cons 2 nil)))")
+    result == "1"
