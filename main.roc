@@ -1,13 +1,10 @@
-app "roc-lisp"
-    packages {
-        pf: "https://github.com/roc-lang/basic-cli/releases/download/0.19.0/Hj-J_zxz7V9YurCSTFcFdu6cQJie4guzsPMUi5kBYUk.tar.br"
-    }
-    imports [
-        pf.Stdout,
-        pf.Stdin,
-        pf.Arg,
-    ]
-    provides [main!] to pf
+app [main!] {
+    pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.19.0/Hj-J_zxz7V9YurCSTFcFdu6cQJie4guzsPMUi5kBYUk.tar.br",
+}
+
+import pf.Stdout
+import pf.Stdin
+import pf.Arg
 
 # Based on Peter Norvig's Python implementation
 # https://norvig.com/lispy.html
@@ -119,8 +116,6 @@ env_set = |env, name, val|
             mem = Dict.insert(env.mem, key, val)
             scope = Dict.insert(env.scope, name, key)
             { mem, scope, nextSuffix: next_suffix }
-
-
 
 empty_env = { mem: Dict.empty({}), scope: Dict.empty({}), nextSuffix: 0 }
 
@@ -270,10 +265,15 @@ apply_built_in = |name, arg_forms, env|
             _ -> (ErrVal("${name} requires 2 args"), env)
     when name is
         "+" ->
-            nary_reduce_fn(arg_forms, IVal(0), env, |a, b|
-                when (a, b) is
-                    (IVal(iA), IVal(iB)) -> IVal(iA + iB)
-                    _ -> ErrVal("TypeError in +, args ${val_str(a)} ${val_str(b)}"))
+            nary_reduce_fn(
+                arg_forms,
+                IVal(0),
+                env,
+                |a, b|
+                    when (a, b) is
+                        (IVal(iA), IVal(iB)) -> IVal(iA + iB)
+                        _ -> ErrVal("TypeError in +, args ${val_str(a)} ${val_str(b)}"),
+            )
 
         "-" ->
             when arg_forms is
@@ -286,58 +286,78 @@ apply_built_in = |name, arg_forms, env|
 
                 [first, .. as rest] ->
                     (first_val, env2) = eval(first, env)
-                    nary_reduce_fn(rest, first_val, env2, |a, b|
-                        when (a, b) is
-                            (IVal(iA), IVal(iB)) -> IVal(iA - iB)
-                            _ -> ErrVal("TypeError in -, args ${val_str(a)} ${val_str(b)}"))
+                    nary_reduce_fn(
+                        rest,
+                        first_val,
+                        env2,
+                        |a, b|
+                            when (a, b) is
+                                (IVal(iA), IVal(iB)) -> IVal(iA - iB)
+                                _ -> ErrVal("TypeError in -, args ${val_str(a)} ${val_str(b)}"),
+                    )
 
         "*" ->
-            nary_reduce_fn(arg_forms, IVal(1), env, |a, b|
-                when (a, b) is
-                    (IVal(iA), IVal(iB)) -> IVal(iA * iB)
-                    _ -> ErrVal("TypeError in *, args ${val_str(a)} ${val_str(b)}"))
+            nary_reduce_fn(
+                arg_forms,
+                IVal(1),
+                env,
+                |a, b|
+                    when (a, b) is
+                        (IVal(iA), IVal(iB)) -> IVal(iA * iB)
+                        _ -> ErrVal("TypeError in *, args ${val_str(a)} ${val_str(b)}"),
+            )
 
         "/" ->
-            binary_fn(|a_val, b_val|
-                when (a_val, b_val) is
-                    (IVal(iA), IVal(iB)) ->
-                        when Num.div_trunc_checked(iA, iB) is
-                            Ok(n) -> IVal(n)
-                            Err(DivByZero) -> ErrVal("DivByZero")
+            binary_fn(
+                |a_val, b_val|
+                    when (a_val, b_val) is
+                        (IVal(iA), IVal(iB)) ->
+                            when Num.div_trunc_checked(iA, iB) is
+                                Ok(n) -> IVal(n)
+                                Err(DivByZero) -> ErrVal("DivByZero")
 
-                    _ -> ErrVal("TypeError in /, args ${val_str(a_val)} ${val_str(b_val)}"))
+                        _ -> ErrVal("TypeError in /, args ${val_str(a_val)} ${val_str(b_val)}"),
+            )
 
         "<" ->
-            binary_fn(|a_val, b_val|
-                when (a_val, b_val) is
-                    (IVal(iA), IVal(iB)) ->
-                        if iA < iB then TVal else nilVal
+            binary_fn(
+                |a_val, b_val|
+                    when (a_val, b_val) is
+                        (IVal(iA), IVal(iB)) ->
+                            if iA < iB then TVal else nilVal
 
-                    _ -> ErrVal("TypeError in <, args ${val_str(a_val)} ${val_str(b_val)}"))
+                        _ -> ErrVal("TypeError in <, args ${val_str(a_val)} ${val_str(b_val)}"),
+            )
 
         ">" ->
-            binary_fn(|a_val, b_val|
-                when (a_val, b_val) is
-                    (IVal(iA), IVal(iB)) ->
-                        if iA > iB then TVal else nilVal
+            binary_fn(
+                |a_val, b_val|
+                    when (a_val, b_val) is
+                        (IVal(iA), IVal(iB)) ->
+                            if iA > iB then TVal else nilVal
 
-                    _ -> ErrVal("TypeError in >, args ${val_str(a_val)} ${val_str(b_val)}"))
+                        _ -> ErrVal("TypeError in >, args ${val_str(a_val)} ${val_str(b_val)}"),
+            )
 
         ">=" ->
-            binary_fn(|a_val, b_val|
-                when (a_val, b_val) is
-                    (IVal(iA), IVal(iB)) ->
-                        if iA >= iB then TVal else nilVal
+            binary_fn(
+                |a_val, b_val|
+                    when (a_val, b_val) is
+                        (IVal(iA), IVal(iB)) ->
+                            if iA >= iB then TVal else nilVal
 
-                    _ -> ErrVal("TypeError in >=, args ${val_str(a_val)} ${val_str(b_val)}"))
+                        _ -> ErrVal("TypeError in >=, args ${val_str(a_val)} ${val_str(b_val)}"),
+            )
 
         "<=" ->
-            binary_fn(|a_val, b_val|
-                when (a_val, b_val) is
-                    (IVal(iA), IVal(iB)) ->
-                        if iA <= iB then TVal else nilVal
+            binary_fn(
+                |a_val, b_val|
+                    when (a_val, b_val) is
+                        (IVal(iA), IVal(iB)) ->
+                            if iA <= iB then TVal else nilVal
 
-                    _ -> ErrVal("TypeError in <=, args ${val_str(a_val)} ${val_str(b_val)}"))
+                        _ -> ErrVal("TypeError in <=, args ${val_str(a_val)} ${val_str(b_val)}"),
+            )
 
         "cons" ->
             when arg_forms is
@@ -416,8 +436,10 @@ apply_built_in = |name, arg_forms, env|
                 _ -> (ErrVal("not requires 1 arg"), env)
 
         "equal?" ->
-            binary_fn(|a_val, b_val|
-                if val_equal(a_val, b_val) then TVal else nilVal)
+            binary_fn(
+                |a_val, b_val|
+                    if val_equal(a_val, b_val) then TVal else nilVal,
+            )
 
         "procedure?" ->
             when arg_forms is
@@ -448,26 +470,30 @@ apply = |fn, arg_forms, env|
             if List.len(params) == List.len(arg_forms) then
                 # Save the original scope
                 original_scope = env.scope
-                
+
                 # Create a new environment with the lambda's scope
                 lambda_env = { env & scope: lambda_scope }
-                
+
                 # Evaluate arguments and bind them to parameters
-                lambda_env_with_args = 
-                    List.walk_with_index(arg_forms, lambda_env, \env_acc, arg, i ->
-                        # Get the parameter name
-                        when List.get(params, i) is
-                            Ok(param) ->
-                                # Evaluate the argument in the original environment
-                                (arg_val, _) = eval(arg, env)
-                                # Bind the parameter in the lambda environment
-                                env_set(env_acc, param, arg_val)
-                            _ -> env_acc
+                lambda_env_with_args =
+                    List.walk_with_index(
+                        arg_forms,
+                        lambda_env,
+                        |env_acc, arg, i|
+                            # Get the parameter name
+                            when List.get(params, i) is
+                                Ok(param) ->
+                                    # Evaluate the argument in the original environment
+                                    (arg_val, _) = eval(arg, env)
+                                    # Bind the parameter in the lambda environment
+                                    env_set(env_acc, param, arg_val)
+
+                                _ -> env_acc,
                     )
-                
+
                 # Evaluate the body in the lambda's environment
                 (result, _) = eval_forms(body, lambda_env_with_args)
-                
+
                 # Return the result with the original scope restored
                 (result, { env & scope: original_scope })
             else
@@ -520,10 +546,12 @@ eval_list = |items, env|
                     when rest is
                         [ListNode(params), .. as body] ->
                             # Extract parameter names from AtomNodes
-                            param_names = List.map(params, |p| 
-                                when p is
-                                    AtomNode(name) -> name
-                                    _ -> "invalid-param" # This should not happen in valid Lisp code
+                            param_names = List.map(
+                                params,
+                                |p|
+                                    when p is
+                                        AtomNode(name) -> name
+                                        _ -> "invalid-param", # This should not happen in valid Lisp code
                             )
                             (LambdaVal(param_names, body, env.scope), env)
 
@@ -537,14 +565,15 @@ eval_list = |items, env|
                     (first_val, env2) = eval_list(asts, env)
                     apply(first_val, rest, env2)
 
-
 eval_forms : List Ast, Env -> (Val, Env)
 eval_forms = |asts, env|
     when asts is
-        [] -> 
+        [] ->
             (ListVal([]), env)
-        [first] -> 
+
+        [first] ->
             eval(first, env)
+
         [first, .. as rest] ->
             (_, env2) = eval(first, env)
             eval_forms(rest, env2)
@@ -566,12 +595,12 @@ main! : List Arg.Arg => Result {} [Exit I32 Str]_
 main! = |_args|
     # Simple REPL implementation
     initial_state = { pending_input: "", env: default_env }
-    
+
     # Run a single iteration of the REPL
     repl_step! = |state|
         { pending_input, env } = state
         _ = Stdout.write!("> ")
-        
+
         when Stdin.line!({}) is
             Ok(input) ->
                 combined_input = "${pending_input}\n${input}"
@@ -592,15 +621,15 @@ main! = |_args|
                         _ = Stdout.line!(Inspect.to_str(read_err))
                         Ok({ env: env, pending_input: "" })
 
-            Err(_) -> 
+            Err(_) ->
                 Err(Exit(0, "Goodbye!"))
-    
+
     # Run the REPL until EOF or error
     run_repl_loop! = |state|
         when repl_step!(state) is
             Ok(new_state) -> run_repl_loop!(new_state)
             Err(exit) -> Err(exit)
-    
+
     run_repl_loop!(initial_state)
 
 # Test Env
@@ -658,7 +687,7 @@ expect
         """
         (define rec (lambda (a) (if a nil (rec (not a)))))
         (rec t)
-        """
+        """,
     )
     result == "(  )"
 
@@ -668,10 +697,9 @@ expect
         """
         (define fib (lambda (n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))
         (fib 5)
-        """
+        """,
     )
     result == "5"
-
 
 expect
     result = read_eval_print("((lambda (b) b) 1)")
