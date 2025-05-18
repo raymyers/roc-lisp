@@ -5,10 +5,9 @@ app "roc-lisp"
     imports [
         pf.Stdout,
         pf.Stdin,
-        pf.Stderr,
         pf.Arg,
     ]
-    provides [main] to pf
+    provides [main!] to pf
 
 # Based on Peter Norvig's Python implementation
 # https://norvig.com/lispy.html
@@ -23,13 +22,13 @@ tokenize = |s|
     |> Str.split_on(" ")
     |> List.drop_if(|e| e == "")
 
-# expect tokenize("(1 2(3))") == ["(", "1", "2", "(", "3", ")", ")"]
+expect tokenize("(1 2(3))") == ["(", "1", "2", "(", "3", ")", ")"]
 
 Ast : [AtomNode Str, ListNode (List Ast)]
 
 ReadErr : [MissingCloseParen, UnexpectedCloseParen]
 
-parse_str = |str| read_from_tokens(tokenize(str))
+# parse_str = |str| read_from_tokens(tokenize(str))
 
 read_from_tokens : List Str -> Result (List Ast) ReadErr
 read_from_tokens = |tokens|
@@ -44,10 +43,10 @@ read_from_tokens = |tokens|
 
             Err(err) -> Err(err)
 
-# expect
-#     read_from_tokens(tokenize("(1 2(3))"))
-#     ==
-#     Ok([ListNode([AtomNode("1"), AtomNode("2"), ListNode([AtomNode("3")])])])
+expect
+    read_from_tokens(tokenize("(1 2(3))"))
+    ==
+    Ok([ListNode([AtomNode("1"), AtomNode("2"), ListNode([AtomNode("3")])])])
 
 read_once_from_tokens : List Str -> Result (Ast, List Str) ReadErr
 read_once_from_tokens = |tokens|
@@ -168,15 +167,15 @@ lisp_str = |ast|
             children_str = Str.join_with(child_strs, " ")
             "( ${children_str} )"
 
-# expect
-#     results =
-#         "(1 2(5))"
-#         |> tokenize
-#         |> read_from_tokens
-#         |> Result.with_default([])
-#         |> List.map(lisp_str)
-# 
-#     results == ["( 1 2 ( 5 ) )"]
+expect
+    results =
+        "(1 2(5))"
+        |> tokenize
+        |> read_from_tokens
+        |> Result.with_default([])
+        |> List.map(lisp_str)
+    dbg results
+    results == ["( 1 2 ( 5 ) )"]
 
 val_str : Val -> Str
 val_str = |val|
@@ -220,11 +219,11 @@ expect val_equal(ListVal([TVal]), ListVal([TVal]))
 expect !(val_equal(ListVal([IVal(1)]), ListVal([IVal(2)])))
 expect !(val_equal(ListVal([IVal(1)]), ListVal([IVal(1), IVal(2)])))
 
-built_in_2_arg = |name, f|
-    BuiltInVal(name, |args|
-        when args is
-            [arg1, arg2] -> f(arg1, arg2)
-            _ -> ErrVal("Wrong number of args for '${name}'"))
+# built_in_2_arg = |name, f|
+#     BuiltInVal(name, |args|
+#         when args is
+#             [arg1, arg2] -> f(arg1, arg2)
+#             _ -> ErrVal("Wrong number of args for '${name}'"))
 
 eval_atom : Str, Env -> Val
 eval_atom = |s, env|
@@ -562,15 +561,15 @@ read_eval_print = |str|
 
         Err(err) -> Inspect.to_str(err)
 
-ReplState : { pending_input : Str, env : Env }
+# ReplState : { pending_input : Str, env : Env }
 
-main : List Arg.Arg -> Result {} [Exit I32 Str]_
-main = |_args|
+main! : List Arg.Arg => Result {} [Exit I32 Str]_
+main! = |_args|
     # Simple REPL implementation
     initial_state = { pending_input: "", env: default_env }
     
     # Run a single iteration of the REPL
-    repl_step = |state|
+    repl_step! = |state|
         { pending_input, env } = state
         _ = Stdout.write!("> ")
         
@@ -598,12 +597,12 @@ main = |_args|
                 Err(Exit(0, "Goodbye!"))
     
     # Run the REPL until EOF or error
-    run_repl = |state|
-        when repl_step(state) is
-            Ok(new_state) -> run_repl(new_state)
+    run_repl! = |state|
+        when repl_step!(state) is
+            Ok(new_state) -> run_repl!(new_state)
             Err(exit) -> Err(exit)
     
-    run_repl(initial_state)
+    run_repl!(initial_state)
 
 # Test Env
 expect
@@ -653,6 +652,7 @@ expect
     dbg result
 
     result == "1"
+
 expect
     # Recursion
     result = read_eval_print(
