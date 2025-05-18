@@ -5,7 +5,7 @@ Simple Lisp interpretor in [Roc](https://www.roc-lang.org) based on Peter Norvig
 This is meant as an educational example, for a full-featured Lisp implementation try Racket or SBCL.
 
 ## Requirements
-* [Roc](https://www.roc-lang.org) (tested with nightly 070d14a5d60)
+* [Roc](https://www.roc-lang.org) (tested with nightly e0cefe4)
 
 ## Test
 ```

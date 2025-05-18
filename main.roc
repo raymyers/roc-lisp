@@ -1,6 +1,4 @@
-app [main] {
-    pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.10.0/vNe6s9hWzoTZtFmNkvEICPErI9ptji_ySjicO6CkucY.tar.br",
-}
+app [main!] { pf: platform "https://github.com/roc-lang/basic-cli/releases/download/0.19.0/Hj-J_zxz7V9YurCSTFcFdu6cQJie4guzsPMUi5kBYUk.tar.br" }
 
 # Based on Peter Norvig's Python implementation
 # https://norvig.com/lispy.html
@@ -8,15 +6,14 @@ app [main] {
 import pf.Stdout
 import pf.Stdin
 import pf.Stderr
-import pf.Task exposing [Task]
 
 tokenize = \s ->
     s
-    |> Str.replaceEach "(" " ( "
-    |> Str.replaceEach ")" " ) "
-    |> Str.replaceEach "\r" " "
-    |> Str.replaceEach "\n" " "
-    |> Str.replaceEach "\t" " "
+    |> Str.replace_each "(" " ( "
+    |> Str.replace_each ")" " ) "
+    |> Str.replace_each "\r" " "
+    |> Str.replace_each "\n" " "
+    |> Str.replace_each "\t" " "
     |> Str.split " "
     |> List.dropIf \e -> e == ""
 
@@ -162,7 +159,7 @@ lispStr = \ast ->
         AtomNode s -> s
         ListNode asts ->
             childStrs = List.map asts lispStr
-            childrenStr = Str.joinWith childStrs " "
+            childrenStr = Str.join_with childStrs " "
             "( $(childrenStr) )"
 
 expect
@@ -170,7 +167,7 @@ expect
         "(1 2(5))"
         |> tokenize
         |> readFromTokens
-        |> Result.withDefault []
+        |> Result.with_default []
         |> List.map lispStr
     dbg results
 
@@ -183,13 +180,13 @@ valStr = \val ->
         IVal n -> Num.toStr n
         ListVal vals ->
             childStrs = List.map vals valStr
-            childrenStr = Str.joinWith childStrs " "
+            childrenStr = Str.join_with childStrs " "
             "( $(childrenStr) )"
 
         TVal -> "t"
         LambdaVal params body _ ->
-            paramsStr = Str.joinWith params " "
-            bodyStr = body |> List.map lispStr |> Str.joinWith " "
+            paramsStr = Str.join_with params " "
+            bodyStr = body |> List.map lispStr |> Str.join_with " "
             "(lambda ($(paramsStr)) $(bodyStr)"
 
         BuiltInVal name ->
@@ -226,7 +223,7 @@ builtIn2Arg = \name, f ->
 
 evalAtom : Str, Env -> Val
 evalAtom = \s, env ->
-    when Str.toI32 s is
+    when Str.to_i32 s is
         Ok n -> IVal n
         Err _ ->
             # Symbol
@@ -367,7 +364,7 @@ applyBuiltIn = \name, argForms, env ->
                         ListVal [first, ..] -> (first, env2)
                         _ -> (ErrVal "car arg must be a list", env2)
 
-                _ -> (ErrVal "car requires 1 arg, got $(Inspect.toStr argForms)", env)
+                _ -> (ErrVal "car requires 1 arg, got $(Inspect.to_str argForms)", env)
 
         "cdr" ->
             when argForms is
@@ -558,13 +555,13 @@ readEvalPrint = \str ->
             (val, _) = asts |> evalForms env
             valStr val
 
-        Err err -> Inspect.toStr err
+        Err err -> Inspect.to_str err
 
 ReplState : { pendingInput : Str, env : Env }
 
-run : Task {} _
+run : Result {} _
 run =
-    readEvalPrintTask : ReplState -> Task [Done {}, Step ReplState] _
+    readEvalPrintTask : ReplState -> Result [Done {}, Step ReplState] _
     readEvalPrintTask = \state ->
         { pendingInput, env } = state
         when Stdout.write "> " |> Task.result! is
@@ -584,30 +581,30 @@ run =
                                         nextState = { env: env2, pendingInput: "" }
                                         Task.ok (Step nextState)
 
-                                    Err err -> Task.err err
+                                    Err err -> Err err
 
                             Err MissingCloseParen ->
                                 nextState = { env, pendingInput: combinedInput }
-                                Task.ok (Step nextState)
+                                Result (Step nextState)
 
                             Err readErr ->
-                                when Stdout.line (Inspect.toStr readErr) |> Task.result! is
+                                when Stdout.line (Inspect.to_str readErr) |> Task.result! is
                                     Ok _ -> Task.ok (Step { env: env, pendingInput: "" })
-                                    Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
+                                    Err err -> Task.err (StdoutErr (Other (Inspect.to_str err)))
 
                     Err (StdinErr EndOfFile) -> Task.ok (Done {})
-                    Err err -> Task.err (StdoutErr (Other (Inspect.toStr err)))
+                    Err err -> Task.err (StdoutErr (Other (Inspect.to_str err)))
 
             Err err -> Task.err err
     initialState = { pendingInput: "", env: defaultEnv }
     Task.loop! initialState readEvalPrintTask
 
-main = run |> Task.onErr printErr
+main = run |> Result.map_err printErr
 
 printErr : _ -> Task {} _
 printErr = \err ->
     when err is
-        _ -> Stderr.line "Error: $(Inspect.toStr err)"
+        _ -> Stderr.line! "Error: $(Inspect.to_str err)"
 
 # Test Env
 expect
