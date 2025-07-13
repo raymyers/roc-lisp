@@ -1,6 +1,6 @@
 # Roc Lisp
 
-Simple Lisp interpretor in [Roc](https://www.roc-lang.org) based on Peter Norvig's [Python implementation](https://norvig.com/lispy.html).
+Simple Lisp interpreter in [Roc](https://www.roc-lang.org) based on Peter Norvig's [Python implementation](https://norvig.com/lispy.html).
 
 This is meant as an educational example, for a full-featured Lisp implementation try Racket or SBCL.
 
